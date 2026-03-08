@@ -9,7 +9,7 @@
 #include "mos6502/cpu.h"
 
 int main() {
-    const char* functional_test_path = "/home/chinmay/Work/codebases/mos6502/tests/functional/6502_functional_test.bin";
+    const char* functional_test_path = "";
     chip_t chip;
     cpu_init(&chip);
 
