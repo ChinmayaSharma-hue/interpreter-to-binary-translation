@@ -1,0 +1,7 @@
+.venv
+.idea
+build
+cmake-build-debug
+tools/diagnosis.json
+tools/mine
+tools/reference
