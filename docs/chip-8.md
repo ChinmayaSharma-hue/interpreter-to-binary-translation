@@ -1,6 +1,7 @@
 ---
 layout: default
 title: CHIP-8 Implementation
+permalink: /chip-8/
 ---
 
 # Writing a CHIP-8 interpreter
@@ -55,3 +56,6 @@ void execute(const uint16_t instruction, chip8_t *state) {
 ```
 
 Since this part was just to get familiar with reading unfamiliar instruction sets and implement them in the simplest way possible, this implementation was just enough.
+
+[home]({{ '/' | relative_url }})
+[writing a tiny interpreter for a simple self-designed ISA]({{ '/custom-isa/' | relative_url }})

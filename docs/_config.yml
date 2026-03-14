@@ -5,3 +5,4 @@ markdown: kramdown
 plugins:
   - jekyll-remote-theme
 search_enabled: true
+permalink: pretty

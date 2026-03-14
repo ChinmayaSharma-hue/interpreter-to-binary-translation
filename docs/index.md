@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Home
+permalink: /
 ---
 
 # Going from a simple interpreter to a dynamic binary translator
@@ -27,5 +28,5 @@ This was the plan,
 
 ## Sections
 
-- [Custom ISA](custom-isa)
-- [CHIP-8 implementation](chip-8)
+- [writing a tiny interpreter for a simple self-designed ISA]({{ '/custom-isa/' | relative_url }})
+- [writing a CHIP-8 interpreter]({{ '/chip-8/' | relative_url }})
