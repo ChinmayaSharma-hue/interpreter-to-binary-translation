@@ -1,14 +1,14 @@
 ---
 layout: default
-title: writing a CHIP-8 interpreter
+title: Interpreter for CHIP-8
 permalink: /chip-8/
 ---
 
 # Writing a CHIP-8 interpreter
 
 Going from the custom ISA to CHIP-8 is not a big deal, all I have to do now is to understand the instruction set and implement it in the same way.
-So I didn't do anything flashy,
 
+The chip,
 ```c
 typedef struct {
    uint8_t registers[16];
@@ -54,5 +54,3 @@ void execute(const uint16_t instruction, chip8_t *state) {
    }
 }
 ```
-
-Since this part was just to get familiar with reading unfamiliar instruction sets and implement them in the simplest way possible, this implementation was just enough.

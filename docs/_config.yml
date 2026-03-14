@@ -1,8 +1,5 @@
 title: mos6502
 description: mos6502 project documentation
-remote_theme: just-the-docs/just-the-docs
+theme: jekyll-theme-minimal
 markdown: kramdown
-plugins:
-  - jekyll-remote-theme
-search_enabled: true
 permalink: pretty

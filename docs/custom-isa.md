@@ -1,12 +1,12 @@
 ---
 layout: default
-title: writing a tiny interpreter for a simple self-designed ISA
+title: Interpreter for a Self-designed ISA
 permalink: /custom-isa/
 ---
 
 # Writing a tiny interpreter for a simple self-designed ISA
 
-A very trashy ISA that is sufficient to understand interpreter semantics.
+A minimal ISA that is sufficient to understand interpreter semantics.
 
 1. Add,
     1. `ADD r[x], r[y], r[z]`, where the sum of `r[y]` and `r[z]` are stored in `r[x]`
