@@ -55,6 +55,3 @@ void execute(const uint16_t instruction, chip8_t *state) {
 ```
 
 Since this part was just to get familiar with reading unfamiliar instruction sets and implement them in the simplest way possible, this implementation was just enough.
-
-[Back to Home](./)
-[Custom ISA](custom-isa)

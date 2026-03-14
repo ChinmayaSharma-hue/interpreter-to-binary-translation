@@ -58,6 +58,3 @@ The encoding,
         1. opcode, `11`
         2. mode, `1`
         3. operands, two 3-bit register addressing values
-
-[Back to Home](./)
-[CHIP-8 implementation](chip-8)
