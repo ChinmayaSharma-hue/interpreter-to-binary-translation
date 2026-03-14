@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Custom ISA
+title: writing a tiny interpreter for a simple self-designed ISA
 permalink: /custom-isa/
 ---
 
@@ -60,5 +60,3 @@ The encoding,
         2. mode, `1`
         3. operands, two 3-bit register addressing values
 
-[Back to Home]({{ '/' | relative_url }})
-[writing a CHIP-8 interpreter]({{ '/chip-8/' | relative_url }})
