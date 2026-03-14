@@ -55,7 +55,6 @@ void cpu_step_interpreter(chip_t* chip) {
            chip->status_register,
            opcode);
 
-    /* Detect JMP absolute self-loop */
     if (opcode == 0x4C) {
         const uint8_t lo = chip->memory[chip->program_counter];
         const uint8_t hi = chip->memory[chip->program_counter + 1];
@@ -63,7 +62,7 @@ void cpu_step_interpreter(chip_t* chip) {
         const uint16_t target = (hi << 8) | lo;
 
         if (target == pc_before) {
-            exit(0);   /* or set a halt flag */
+            exit(0);
         }
     }
 

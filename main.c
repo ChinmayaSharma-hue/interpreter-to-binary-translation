@@ -1,5 +1,5 @@
 #include "app/emulator.h"
 
 int main(int argc, char **argv) {
-    return app_run(argc, argv);
+    return run(argc, argv);
 }

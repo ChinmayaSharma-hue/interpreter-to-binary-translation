@@ -14,7 +14,7 @@ typedef enum {
 typedef struct {
     const char *program_path;
     const char *mode_from_cli;
-} app_config_t;
+} config_t;
 
 static const char *const DEFAULT_PROGRAM_PATH = "tests/functional/6502_functional_test.bin";
 
@@ -48,12 +48,12 @@ static bool parse_emulation_mode(const char *value, emulation_mode_t *mode, bool
     return false;
 }
 
-static void init_default_config(app_config_t *config) {
+static void init_default_config(config_t *config) {
     config->program_path = DEFAULT_PROGRAM_PATH;
     config->mode_from_cli = NULL;
 }
 
-static int parse_cli_args(int argc, char **argv, app_config_t *config) {
+static int parse_cli_args(int argc, char **argv, config_t *config) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
@@ -88,7 +88,7 @@ static int parse_cli_args(int argc, char **argv, app_config_t *config) {
     return -1;
 }
 
-static int resolve_emulation_mode(const app_config_t *config, emulation_mode_t *mode) {
+static int resolve_emulation_mode(const config_t *config, emulation_mode_t *mode) {
     if (config->mode_from_cli != NULL) {
         if (!parse_emulation_mode(config->mode_from_cli, mode, false)) {
             fprintf(stderr,
@@ -139,8 +139,8 @@ static int run_emulation(chip_t *chip, emulation_mode_t mode) {
     return EXIT_FAILURE;
 }
 
-int app_run(int argc, char **argv) {
-    app_config_t config;
+int run(int argc, char **argv) {
+    config_t config;
     chip_t chip;
     emulation_mode_t mode;
 
