@@ -2,8 +2,8 @@
 // Created by chinmay on 01/02/26.
 //
 
-#ifndef MOS6502_OPCODE_H
-#define MOS6502_OPCODE_H
+#ifndef MOS6502_INTERPRETER_ENGINE_H
+#define MOS6502_INTERPRETER_ENGINE_H
 #include "mos6502/cpu.h"
 
 typedef void (*opcode_func)(chip_t *);
@@ -324,4 +324,4 @@ static const uint8_t valid_opcode[256] = {
 };
 
 void execute_opcode(uint8_t opcode, chip_t *chip);
-#endif //MOS6502_OPCODE_H
+#endif //MOS6502_INTERPRETER_ENGINE_H

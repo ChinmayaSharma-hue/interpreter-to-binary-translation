@@ -3,7 +3,7 @@
 //
 
 #include <stdint.h>
-#include "mos6502/opcodes.h"
+#include "mos6502/interpreter_engine.h"
 
 #include <stdbool.h>
 #include "mos6502/cpu.h"
@@ -506,23 +506,32 @@ static inline void adc(chip_t* chip, const uint8_t value) {
     const uint8_t accumulator = chip->accumulator;
     const uint8_t carry = chip->status_register & 0x01;
     uint16_t sum = accumulator + value + carry;
-    const bool overflow = ~(accumulator ^ value) & (accumulator ^ (uint8_t)sum) & 0x80;
+    uint8_t zn_result;
+    uint8_t overflow_source;
     if (chip->status_register & 0x08) {
         // decimal mode
-        if (((accumulator & 0x0F) + (value & 0x0F) + carry) > 9) {
-            sum += 0x06;
+        uint8_t low_nibble = (accumulator & 0x0F) + (value & 0x0F) + carry;
+        const uint8_t half_carry = (low_nibble > 9) ? 1 : 0;
+        uint8_t high_nibble = ((accumulator >> 4) & 0x0F) + ((value >> 4) & 0x0F) + half_carry;
+        zn_result = (uint8_t)(((high_nibble & 0x0F) << 4) | (low_nibble & 0x0F));
+        overflow_source = zn_result;
+        if (low_nibble > 9) {
+            low_nibble += 0x06;
         }
-        if (sum > 0x99) {
-            sum += 0x60;
+        if (high_nibble > 0x9) {
+            high_nibble += 0x06;
         }
-        chip->accumulator = sum & 0xff;
-        set_carry(chip, sum > 0x99);
+        chip->accumulator = (uint8_t)(((high_nibble & 0x0F) << 4) | (low_nibble & 0x0F));
+        set_carry(chip, high_nibble > 0x0F);
     } else {
         // binary mode
         chip->accumulator = sum & 0xFF;
         set_carry(chip, sum & 0x100);
+        zn_result = chip->accumulator;
+        overflow_source = chip->accumulator;
     }
-    set_ZN(chip, chip->accumulator);
+    set_ZN(chip, zn_result);
+    const bool overflow = ~(accumulator ^ value) & (accumulator ^ overflow_source) & 0x80;
     set_overflow(chip, overflow);
 }
 static void op_adc_imm(chip_t *chip) {
@@ -615,18 +624,19 @@ static void op_cpy_zp(chip_t *chip) {
 static inline void sbc(chip_t* chip, const uint8_t value) {
     const uint8_t accumulator = chip->accumulator;
     const uint8_t carry = chip->status_register & 0x01;
-    uint16_t difference = accumulator + ~value + carry;
-    const bool overflow = ((accumulator ^ difference) & (accumulator ^ value)) & 0x80;
+    uint16_t difference = (uint16_t)accumulator + (uint16_t)((uint8_t)~value) + carry;
+    const uint8_t binary_difference = (uint8_t)difference;
+    const bool overflow = ((accumulator ^ (uint8_t)difference) & (accumulator ^ value)) & 0x80;
+    set_carry(chip, difference > 0xFF);
     if (chip->status_register & 0x08) {
         // decimal mode
         if ((accumulator & 0x0F) < ((value & 0x0F) + (1 - carry)))
             difference -= 0x06;
-        if (difference > 0xFF)
+        if (difference < 0x100)
             difference -= 0x60;
     }
     chip->accumulator = difference & 0xFF;
-    set_carry(chip, difference < 0x100);
-    set_ZN(chip, chip->accumulator);
+    set_ZN(chip, binary_difference);
     set_overflow(chip, overflow);
 
 }

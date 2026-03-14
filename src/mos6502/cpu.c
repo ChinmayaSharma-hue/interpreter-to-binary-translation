@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include "mos6502/cpu.h"
-#include "mos6502/opcodes.h"
+#include "mos6502/interpreter_engine.h"
 
 
 int load_program(chip_t* chip, const char* program_path) {
@@ -38,6 +38,8 @@ void cpu_reset(chip_t* chip) {
     chip->accumulator = 0;
     chip->index_x_register = 0;
     chip->index_y_register = 0;
+    memset(chip->instruction_start_map, UINT16_MAX, sizeof(chip->instruction_start_map));
+    memset(chip->translation_map, UINT16_MAX, sizeof(chip->translation_map));
 }
 
 void cpu_step_interpreter(chip_t* chip) {
@@ -68,7 +70,71 @@ void cpu_step_interpreter(chip_t* chip) {
     execute_opcode(opcode, chip);
 }
 
-void cpu_translate(chip_t* chip, const decode_entry_t *dispatch) {
+static void invalidate_translation_entry(chip_t* chip, const uint16_t spc) {
+    // resetting the translation map
+    if (chip->translation_map[spc] != UINT16_MAX) {
+        fprintf(stderr,
+            "%s (source_pc=%04X, translation_start=%04X, mapped_address=%04X)\n",
+            "The translation for this SPC is being invalidated",
+            spc,
+            spc,
+            chip->translation_map[spc]);
+        chip->translation_map[spc] = UINT16_MAX;
+    }
+}
+
+static void invalidate_instruction_ownership(chip_t* chip, const uint16_t spc) {
+    // resetting the instruction start map
+    size_t instruction_start_map_index = spc;
+    if (chip->instruction_start_map[instruction_start_map_index] != UINT16_MAX) {
+        while (instruction_start_map_index < CODE_CACHE_CAPACITY &&
+               chip->instruction_start_map[instruction_start_map_index] == spc) {
+            chip->instruction_start_map[instruction_start_map_index] = UINT16_MAX;
+            instruction_start_map_index++;
+               }
+    }
+}
+
+static int translate_instruction(chip_t* chip, const decode_entry_t *dispatch, const uint16_t spc, const uint16_t tpc) {
+    const uint8_t opcode = chip->memory[spc];
+
+    // validity and bound checks
+    if (!valid_opcode[opcode]) {
+        invalidate_translation_entry(chip, spc);
+        return -1;
+    }
+
+    const uint8_t length = instruction_length[opcode];
+    if (spc > (uint16_t)(MEMORY_SIZE - length)) {
+        invalidate_translation_entry(chip, spc);
+        return -1;
+    }
+
+    // invalidating the instruction range ownership for this SPC
+    invalidate_instruction_ownership(chip, spc);
+
+    // construction of the threaded instruction
+    threaded_instructions_t instruction = {
+        .handler = dispatch[opcode].handler,
+        .mode = dispatch[opcode].mode,
+        .spc_byte_offset = length
+    };
+    chip->instruction_start_map[spc] = spc;
+    if (length == 2) {
+        instruction.operand = chip->memory[spc+1];
+        chip->instruction_start_map[spc+1] = spc;
+    } else if (length == 3) {
+        instruction.operand = chip->memory[spc+1] | (chip->memory[spc+2] << 8);
+        chip->instruction_start_map[spc+1] = spc;
+        chip->instruction_start_map[spc+2] = spc;
+    }
+    chip->code_cache[tpc] = instruction;
+    chip->translation_map[spc] = tpc;
+
+    return length;
+}
+
+size_t cpu_translate(chip_t* chip, const decode_entry_t *dispatch) {
     /*
         this function is supposed to,
         1. read the guest instructions from the memory,
@@ -77,34 +143,16 @@ void cpu_translate(chip_t* chip, const decode_entry_t *dispatch) {
         4. add the mapping from the guest program counter to the index of the corresponding threaded instruction in the code cache
     */
     uint16_t spc_translate = chip->program_counter;
-    uint16_t tpc = 0;
-    while (tpc < CODE_CACHE_CAPACITY) {
-        const uint8_t opcode = chip->memory[spc_translate];
-
-        // validity and bound checks
-        if (!valid_opcode[opcode]) break;
-        const uint8_t length = instruction_length[opcode];
-        if (spc_translate+length > MEMORY_SIZE) break;
-
-        // construction of the threaded instruction
-        threaded_instructions_t instruction = {
-            .handler = dispatch[opcode].handler,
-            .mode = dispatch[opcode].mode,
-            .spc_byte_offset = length
-        };
-        if (length == 2) {
-            instruction.operand = chip->memory[spc_translate+1];
-        } else if (length == 3) {
-            instruction.operand = chip->memory[spc_translate+1] | (chip->memory[spc_translate+2] << 8);
-        }
-        chip->code_cache[tpc] = instruction;
-        chip->cache_length += 1;
-        chip->translation_map[spc_translate] = &chip->code_cache[tpc];
-
+    while (true) {
+        const int length = translate_instruction(chip, dispatch, spc_translate, (uint16_t)chip->cache_length);
+        if (length < 0) break;
         // increments
-        tpc++;
+        chip->cache_length += 1;
         spc_translate += length;
+        // guard against overflow
+        if (chip->cache_length == CODE_CACHE_CAPACITY) break;
     }
+    return chip->cache_length;
 }
 
 void cpu_run_threaded(chip_t* chip) {
@@ -117,11 +165,12 @@ void cpu_run_threaded(chip_t* chip) {
             - the spc is incremented based on spc_byte_offset, mapped to tpc, get the threaded instruction for the tpc, goto the handler
     */
     __label__ OP_LDA, OP_LDX, OP_LDY, OP_STA, OP_STX, OP_STY, OP_ADC, OP_SBC, OP_AND, OP_ORA, OP_EOR,
+              OP_BIT,
               OP_CMP, OP_CPX, OP_CPY, OP_ASL, OP_LSR, OP_ROL, OP_ROR, OP_INC, OP_DEC, OP_INX, OP_INY,
               OP_DEX, OP_DEY, OP_BCC, OP_BCS, OP_BEQ, OP_BNE, OP_BMI, OP_BPL, OP_BVC, OP_BVS, OP_JMP,
               OP_JSR, OP_RTS, OP_RTI, OP_CLC, OP_CLD, OP_CLI, OP_CLV, OP_SEC, OP_SED, OP_SEI, OP_TAX,
               OP_TAY, OP_TXA, OP_TYA, OP_TSX, OP_TXS, OP_PHA, OP_PHP, OP_PLA, OP_PLP, OP_BRK, OP_NOP;
-    threaded_instructions_t *instruction = {};
+    threaded_instructions_t instruction = {};
 
     // decode table to support translation
     static const decode_entry_t dispatch[256] = {
@@ -134,15 +183,15 @@ void cpu_run_threaded(chip_t* chip) {
     }
 
     // find out if the current program counter has a translation
-    if (chip->translation_map[chip->program_counter] == NULL) {
+    if (chip->translation_map[chip->program_counter] == UINT16_MAX) {
         fprintf(stderr, LOG_TRANSLATION_DOES_NOT_EXIST);
         exit(0);
     }
 
     // execute the threaded instruction
-    instruction = chip->translation_map[chip->program_counter];
+    instruction = chip->code_cache[chip->translation_map[chip->program_counter]];
     TRACE_CPU_STATE(chip);
-    goto *instruction->handler;
+    goto *instruction.handler;
 
     // Load Operations
 OP_LDA:
@@ -170,6 +219,8 @@ OP_ORA:
     OP_ORA(chip, instruction);
 OP_EOR:
     OP_EOR(chip, instruction);
+OP_BIT:
+    OP_BIT(chip, instruction);
     // Compare Operations
 OP_CMP:
     OP_CMP(chip, instruction);
@@ -241,17 +292,17 @@ OP_SEI:
     OP_SEI(chip, instruction);
     // Transfer Operations
 OP_TAX:
-    OP_TRANSFER(chip->index_x_register, chip->accumulator, chip, instruction);
+    OP_TRANSFER_TO_REG(chip->index_x_register, chip->accumulator, chip, instruction);
 OP_TAY:
-    OP_TRANSFER(chip->index_y_register, chip->accumulator, chip, instruction);
+    OP_TRANSFER_TO_REG(chip->index_y_register, chip->accumulator, chip, instruction);
 OP_TXA:
-    OP_TRANSFER(chip->accumulator, chip->index_x_register, chip, instruction);
+    OP_TRANSFER_TO_REG(chip->accumulator, chip->index_x_register, chip, instruction);
 OP_TYA:
-    OP_TRANSFER(chip->accumulator, chip->index_y_register, chip, instruction);
+    OP_TRANSFER_TO_REG(chip->accumulator, chip->index_y_register, chip, instruction);
 OP_TSX:
-    OP_TRANSFER(chip->index_x_register, chip->stack_pointer, chip, instruction);
+    OP_TRANSFER_TO_REG(chip->index_x_register, chip->stack_pointer, chip, instruction);
 OP_TXS:
-    OP_TRANSFER(chip->stack_pointer, chip->index_x_register, chip, instruction);
+    OP_TRANSFER_TO_STACK(chip->index_x_register, chip, instruction);
     // Stack Operations
 OP_PHA:
     OP_PUSH_TO_STACK(chip, instruction, chip->accumulator);

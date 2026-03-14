@@ -1,8 +1,9 @@
 #ifndef MOS6502_TYPES_H
 #define MOS6502_TYPES_H
+#include <stddef.h>
 #include <stdint.h>
 
-#define CODE_CACHE_CAPACITY 65535
+#define CODE_CACHE_CAPACITY 65536
 
 typedef enum {
     AM_IMP,
@@ -40,8 +41,9 @@ typedef struct {
     uint8_t stack_pointer;
     uint16_t program_counter;
     uint8_t memory[65536];
-    uint16_t cache_length;
+    size_t cache_length;
     threaded_instructions_t code_cache[CODE_CACHE_CAPACITY];
-    threaded_instructions_t *translation_map[CODE_CACHE_CAPACITY];
+    uint16_t translation_map[CODE_CACHE_CAPACITY];
+    uint16_t instruction_start_map[CODE_CACHE_CAPACITY];
 } chip_t;
 #endif

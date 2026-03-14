@@ -1,64 +1,106 @@
-#ifndef MOS6502_EXEC_H
-#define MOS6502_EXEC_H
+#ifndef MOS6502_THREADED_ENGINE_H
+#define MOS6502_THREADED_ENGINE_H
 #include "mos6502/types.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 #define LOG_INSTRUCTION_DOES_NOT_EXIST "This instruction does not exist"
 #define LOG_TRANSLATION_DOES_NOT_EXIST "The translation for the next instruction does not exist"
+#define LOG_TRANSLATION_FAILED "Dynamic translation of instruction failed"
+#define LOG_SELF_MODIFYING_CODE_DETECTED "Self modifying code detected"
+#define REPORT_INSTRUCTION_DOES_NOT_EXIST(chip)                                             \
+    do {                                                                                    \
+        uint16_t source_program_counter = (chip)->program_counter;                         \
+        uint16_t mapped_address = (chip)->translation_map[source_program_counter];          \
+        fprintf(stderr,                                                                     \
+                "%s (source_pc=%04X, mapped_address=%04X)\n",                              \
+                LOG_INSTRUCTION_DOES_NOT_EXIST,                                             \
+                source_program_counter,                                                     \
+                mapped_address);                                                            \
+    } while (0)
+#define REPORT_TRANSLATION_DOES_NOT_EXIST(chip, mapped_address)                             \
+    do {                                                                                    \
+        fprintf(stderr,                                                                     \
+                "%s (source_pc=%04X, mapped_address=%04X)\n",                              \
+                LOG_TRANSLATION_DOES_NOT_EXIST,                                             \
+                (chip)->program_counter,                                                    \
+                (mapped_address));                                                          \
+    } while (0)
+#if defined(MOS6502_ENABLE_REPORT_SELF_MODIFYING_CODE) && MOS6502_ENABLE_REPORT_SELF_MODIFYING_CODE
+#define REPORT_SELF_MODIFYING_CODE(chip, write_address, translation_address, mapped_address) \
+    do {                                                                                      \
+        fprintf(stderr,                                                                       \
+                "%s (source_pc=%04X, write_address=%04X, translation_start=%04X, mapped_address=%04X)\n", \
+                LOG_SELF_MODIFYING_CODE_DETECTED,                                             \
+                (chip)->program_counter,                                                      \
+                (write_address),                                                              \
+                (translation_address),                                                        \
+                (mapped_address));                                                            \
+    } while (0)
+#else
+#define REPORT_SELF_MODIFYING_CODE(chip, write_address, translation_address, mapped_address) \
+    do {                                                                                      \
+        (void)(chip);                                                                         \
+        (void)(write_address);                                                                \
+        (void)(translation_address);                                                          \
+        (void)(mapped_address);                                                               \
+    } while (0)
+#endif //MOS6502_THREADED_ENGINE_H
 
 #define TRACE_CPU_STATE(chip)                                                                 \
-    printf("%04X %02X %02X %02X %02X %02X %02X\n",                                            \
-           (chip)->program_counter,                                                           \
-           (chip)->accumulator,                                                               \
-           (chip)->index_x_register,                                                          \
-           (chip)->index_y_register,                                                          \
-           (chip)->stack_pointer,                                                             \
-           (chip)->status_register,                                                           \
-           (chip)->memory[(chip)->program_counter])
+    do {                                                                                      \
+        printf("%04X %02X %02X %02X %02X %02X %02X\n",                                        \
+               (chip)->program_counter,                                                       \
+               (chip)->accumulator,                                                           \
+               (chip)->index_x_register,                                                      \
+               (chip)->index_y_register,                                                      \
+               (chip)->stack_pointer,                                                         \
+               (chip)->status_register,                                                       \
+                (chip)->memory[(chip)->program_counter]);                                      \
+    } while (0)
 
 // absolute
 #define EA_ABS(chip, instruction) \
-    ((uint16_t)((instruction)->operand))
+    ((uint16_t)((instruction).operand))
 
 // absolute indexed x
 #define EA_ABS_X(chip, instruction) \
-    ((uint16_t)((instruction)->operand + (chip)->index_x_register))
+    ((uint16_t)((instruction).operand + (chip)->index_x_register))
 
 // absolute indexed y
 #define EA_ABS_Y(chip, instruction) \
-    ((uint16_t)((instruction)->operand + (chip)->index_y_register))
+    ((uint16_t)((instruction).operand + (chip)->index_y_register))
 
 // zero page
 #define EA_ZP(chip, instruction) \
-    ((uint16_t)((uint8_t)((instruction)->operand)))
+    ((uint16_t)((uint8_t)((instruction).operand)))
 
 // zero page indexed x
 #define EA_ZP_X(chip, instruction) \
-    ((uint16_t)((uint8_t)((instruction)->operand + (chip)->index_x_register)))
+    ((uint16_t)((uint8_t)((instruction).operand + (chip)->index_x_register)))
 
 // zero page indexed y
 #define EA_ZP_Y(chip, instruction) \
-    ((uint16_t)((uint8_t)((instruction)->operand + (chip)->index_y_register)))
+    ((uint16_t)((uint8_t)((instruction).operand + (chip)->index_y_register)))
 
 // indexed indirect (zp,x)
 #define EA_IND_X(chip, instruction) \
     ((uint16_t)( \
-        (chip)->memory[(uint8_t)((instruction)->operand + (chip)->index_x_register)] | \
-        ((chip)->memory[(uint8_t)((uint8_t)((instruction)->operand + (chip)->index_x_register) + 1)] << 8) \
+        (chip)->memory[(uint8_t)((instruction).operand + (chip)->index_x_register)] | \
+        ((chip)->memory[(uint8_t)((uint8_t)((instruction).operand + (chip)->index_x_register) + 1)] << 8) \
     ))
 
 // indirect indexed (zp),y
 #define EA_IND_Y(chip, instruction) \
     ((uint16_t)( \
-        ((chip)->memory[(uint8_t)((instruction)->operand)] | \
-        ((chip)->memory[(uint8_t)((uint8_t)((instruction)->operand) + 1)] << 8)) \
+        ((chip)->memory[(uint8_t)((instruction).operand)] | \
+        ((chip)->memory[(uint8_t)((uint8_t)((instruction).operand) + 1)] << 8)) \
         + (chip)->index_y_register \
     ))
 
 // immediate value
 #define VALUE_IMM(instruction) \
-    ((uint8_t)((instruction)->operand))
+    ((uint8_t)((instruction).operand))
 
 #define SET_ZERO_AND_NEGATIVE_FLAGS(chip, value)           \
     do {                                                   \
@@ -115,33 +157,107 @@
         }                                       \
     } while (0)
 
-#define NEXT(chip, instruction)                                           \
-    do {                                                                  \
-        (chip)->program_counter += (instruction)->spc_byte_offset;        \
-        (instruction) = chip->translation_map[(chip)->program_counter];   \
-        if (!(instruction)) {                                             \
-            fprintf(stderr, LOG_TRANSLATION_DOES_NOT_EXIST);              \
-            exit(0);                                                      \
-        }                                                                 \
-        TRACE_CPU_STATE(chip);                                            \
-        goto *(instruction)->handler;                                     \
+#define NEXT(chip, instruction)                                                                 \
+    do {                                                                                        \
+        (chip)->program_counter += (instruction).spc_byte_offset;                               \
+        uint16_t mapped_address = (chip)->translation_map[(chip)->program_counter];             \
+        if (mapped_address == UINT16_MAX) {                                                     \
+            size_t previous_cache_length = (chip)->cache_length;                                \
+            if (previous_cache_length == cpu_translate(chip, dispatch)) {                       \
+                REPORT_TRANSLATION_DOES_NOT_EXIST(chip, mapped_address);                        \
+                exit(0);                                                                        \
+            }                                                                                   \
+        }                                                                                       \
+        mapped_address = (chip)->translation_map[(chip)->program_counter];                      \
+        (instruction) = (chip)->code_cache[mapped_address];                                     \
+        TRACE_CPU_STATE(chip);                                                                  \
+        goto *(instruction).handler;                                                            \
     } while (0)
 
-#define JUMP(chip, instruction, address)                                  \
-    do {                                                                  \
-        (chip)->program_counter = address;                                \
-        (instruction) = chip->translation_map[(chip)->program_counter];   \
-        if (!(instruction)) {                                             \
-            fprintf(stderr, LOG_TRANSLATION_DOES_NOT_EXIST);              \
-            exit(0);                                                      \
-        }                                                                 \
-        TRACE_CPU_STATE(chip);                                            \
-        goto *(instruction)->handler;                                     \
+#define JUMP(chip, instruction, address)                                                        \
+    do {                                                                                        \
+        (chip)->program_counter = address;                                                      \
+        uint16_t mapped_address = (chip)->translation_map[(chip)->program_counter];             \
+        if (mapped_address == UINT16_MAX) {                                                     \
+            size_t previous_cache_length = (chip)->cache_length;                                \
+            if (previous_cache_length == cpu_translate(chip, dispatch)) {                       \
+                REPORT_TRANSLATION_DOES_NOT_EXIST(chip, mapped_address);                        \
+                exit(0);                                                                        \
+            }                                                                                   \
+        }                                                                                       \
+        mapped_address = (chip)->translation_map[(chip)->program_counter];                      \
+        (instruction) = (chip)->code_cache[mapped_address];                                     \
+        TRACE_CPU_STATE(chip);                                                                  \
+        goto *(instruction).handler;                                                            \
     } while (0)
+
+typedef int (*translate_instruction_fn_t)(
+    chip_t *chip,
+    const decode_entry_t *dispatch,
+    uint16_t spc,
+    uint16_t tpc);
+
+static inline void detect_self_modifying_code(
+        chip_t *chip,
+        const uint16_t address,
+        const decode_entry_t *dispatch,
+        const translate_instruction_fn_t translate_instruction_fn
+    ) {
+    uint16_t translation_address = chip->instruction_start_map[address];
+    if (translation_address == UINT16_MAX) {
+        return;
+    }
+
+    uint16_t tpc = chip->translation_map[translation_address];
+    REPORT_SELF_MODIFYING_CODE(chip, address, translation_address, tpc);
+
+    int length_translated;
+    if (tpc != UINT16_MAX) {
+        length_translated = translate_instruction_fn(chip, dispatch, translation_address, tpc);
+    } else {
+        if (chip->cache_length >= CODE_CACHE_CAPACITY) {
+            return;
+        }
+        tpc = (uint16_t)(chip->cache_length);
+        length_translated = translate_instruction_fn(chip, dispatch, translation_address, tpc);
+        if (length_translated > 0) {
+            chip->cache_length += 1;
+        }
+    }
+
+    if (length_translated <= 0) {
+        return;
+    }
+    translation_address += (uint16_t)length_translated;
+
+    while (!((chip->instruction_start_map[translation_address] == translation_address) &&
+             (chip->translation_map[translation_address] != UINT16_MAX))) {
+        tpc = chip->translation_map[translation_address];
+        if (tpc != UINT16_MAX) {
+            length_translated = translate_instruction_fn(chip, dispatch, translation_address, tpc);
+        } else {
+            if (chip->cache_length >= CODE_CACHE_CAPACITY) {
+                return;
+            }
+            tpc = (uint16_t)(chip->cache_length);
+            length_translated = translate_instruction_fn(chip, dispatch, translation_address, tpc);
+            if (length_translated > 0) {
+                chip->cache_length += 1;
+            }
+        }
+
+        if (length_translated <= 0) {
+            return;
+        }
+        translation_address += (uint16_t)length_translated;
+    }
+}
 
 #define PUSH_TO_STACK(chip, value)                                  \
     do {                                                            \
-        (chip)->memory[0x0100 | (chip)->stack_pointer] = (value);   \
+        uint16_t address = (uint16_t)(0x0100 | (chip)->stack_pointer); \
+        (chip)->memory[address] = (value);                          \
+        detect_self_modifying_code(chip, address, dispatch, translate_instruction); \
         (chip)->stack_pointer--;                                    \
     } while (0)
 
@@ -151,7 +267,7 @@
 
 #define OP_LOAD_REG(chip, instruction, reg)                          \
     do {                                                              \
-        switch ((instruction)->mode) {                                \
+        switch ((instruction).mode) {                                \
             case AM_IMM:                                              \
                 (reg) = VALUE_IMM(instruction);                       \
                 break;                                                \
@@ -160,6 +276,9 @@
                 break;                                                \
             case AM_ZP_X:                                             \
                 (reg) = (chip)->memory[EA_ZP_X(chip, instruction)];   \
+                break;                                                \
+            case AM_ZP_Y:                                             \
+                (reg) = (chip)->memory[EA_ZP_Y(chip, instruction)];   \
                 break;                                                \
             case AM_ABS:                                              \
                 (reg) = (chip)->memory[EA_ABS(chip, instruction)];    \
@@ -177,7 +296,7 @@
                 (reg) = (chip)->memory[EA_IND_Y(chip, instruction)];  \
                 break;                                                \
             default:                                                  \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);      \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);      \
                 exit(0);                                              \
         }                                                             \
         SET_ZERO_AND_NEGATIVE_FLAGS(chip, (reg));                     \
@@ -186,42 +305,54 @@
 
 #define OP_STORE_REG(chip, instruction, reg)                          \
     do {                                                              \
-        switch ((instruction)->mode) {                                \
+        uint16_t address;                                             \
+        switch ((instruction).mode) {                                \
             case AM_ZP:                                               \
-                (chip)->memory[EA_ZP(chip, instruction)] = (reg);     \
+                address = EA_ZP(chip, instruction);                   \
                 break;                                                \
             case AM_ZP_X:                                             \
-                (chip)->memory[EA_ZP_X(chip, instruction)] = (reg);   \
+                address = EA_ZP_X(chip, instruction);                 \
+                break;                                                \
+            case AM_ZP_Y:                                             \
+                address = EA_ZP_Y(chip, instruction);                 \
                 break;                                                \
             case AM_ABS:                                              \
-                (chip)->memory[EA_ABS(chip, instruction)] = (reg);    \
+                address = EA_ABS(chip, instruction);                  \
                 break;                                                \
             case AM_ABS_X:                                            \
-                (chip)->memory[EA_ABS_X(chip, instruction)] = (reg);  \
+                address = EA_ABS_X(chip, instruction);                \
                 break;                                                \
             case AM_ABS_Y:                                            \
-                (chip)->memory[EA_ABS_Y(chip, instruction)] = (reg);  \
+                address = EA_ABS_Y(chip, instruction);                \
                 break;                                                \
             case AM_IND_X:                                            \
-                (chip)->memory[EA_IND_X(chip, instruction)] = (reg);  \
+                address = EA_IND_X(chip, instruction);                \
                 break;                                                \
             case AM_IND_Y:                                            \
-                (chip)->memory[EA_IND_Y(chip, instruction)] = (reg);  \
+                address = EA_IND_Y(chip, instruction);                \
                 break;                                                \
             default:                                                  \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);      \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);      \
                 exit(0);                                              \
         }                                                             \
-        SET_ZERO_AND_NEGATIVE_FLAGS(chip, (reg));                     \
+        (chip)->memory[address] = (reg);                              \
+        detect_self_modifying_code(chip, address, dispatch, translate_instruction);                    \
         NEXT(chip, instruction);                                      \
     } while (0)
 
-#define OP_TRANSFER(reg1, reg2, chip, instruction)      \
-    do {                                                \
-        (reg1) = (reg2);                                \
-        SET_ZERO_AND_NEGATIVE_FLAGS(chip, reg1);        \
-        NEXT(chip, instruction);                        \
-    } while (0)                                         \
+#define OP_TRANSFER_TO_REG(reg, value, chip, instruction)       \
+    do {                                                        \
+        (reg) = (value);                                        \
+        SET_ZERO_AND_NEGATIVE_FLAGS(chip, reg);                 \
+        NEXT(chip, instruction);                                \
+    } while (0)                                                 \
+
+#define OP_TRANSFER_TO_STACK(reg, chip, instruction)            \
+    do {                                                        \
+        (chip)->stack_pointer = (reg);                          \
+        NEXT(chip, instruction);                                \
+    } while (0)                                                 \
+
 
 #define OP_PUSH_TO_STACK(chip, instruction, value)                  \
     do {                                                            \
@@ -263,24 +394,33 @@
 
 #define OP_ASL(chip, instruction)                                  \
     do {                                                           \
-        switch ((instruction)->mode) {                             \
+        uint16_t address;                                          \
+        switch ((instruction).mode) {                             \
             case AM_ACC:                                           \
                 ASL_ACC(chip);                                     \
                 break;                                             \
             case AM_ZP:                                            \
-                ASL_MEM(chip, EA_ZP(chip, instruction));           \
+                address = EA_ZP(chip, instruction);                \
+                ASL_MEM(chip, address);                            \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);         \
                 break;                                             \
             case AM_ZP_X:                                          \
-                ASL_MEM(chip, EA_ZP_X(chip, instruction));         \
+                address = EA_ZP_X(chip, instruction);              \
+                ASL_MEM(chip, address);                            \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);         \
                 break;                                             \
             case AM_ABS:                                           \
-                ASL_MEM(chip, EA_ABS(chip, instruction));          \
+                address = EA_ABS(chip, instruction);               \
+                ASL_MEM(chip, address);                            \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);         \
                 break;                                             \
             case AM_ABS_X:                                         \
-                ASL_MEM(chip, EA_ABS_X(chip, instruction));        \
+                address = EA_ABS_X(chip, instruction);             \
+                ASL_MEM(chip, address);                            \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);         \
                 break;                                             \
             default:                                               \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);   \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);   \
                 exit(0);                                           \
         }                                                          \
         NEXT(chip, instruction);                                   \
@@ -289,7 +429,7 @@
 #define LSR_MEM(chip, addr)                                \
     do {                                                   \
         uint8_t v = (chip)->memory[(addr)];                \
-        SET_CARRY(chip, v & 0x80);                         \
+        SET_CARRY(chip, v & 0x01);                         \
         v >>= 1;                                           \
         (chip)->memory[(addr)] = v;                        \
         SET_ZERO_AND_NEGATIVE_FLAGS(chip, v);              \
@@ -299,7 +439,7 @@
 #define LSR_ACC(chip)                                      \
     do {                                                   \
         uint8_t v = (chip)->accumulator;                   \
-        SET_CARRY(chip, v & 0x80);                         \
+        SET_CARRY(chip, v & 0x01);                         \
         v >>= 1;                                           \
         (chip)->accumulator = v;                           \
         SET_ZERO_AND_NEGATIVE_FLAGS(chip, v);              \
@@ -308,29 +448,33 @@
 
 #define OP_LSR(chip, instruction)                                  \
     do {                                                            \
-        switch ((instruction)->mode) {                              \
+        uint16_t address;                                           \
+        switch ((instruction).mode) {                              \
             case AM_ACC:                                            \
                 LSR_ACC(chip);                                      \
                 break;                                              \
-                                                                     \
             case AM_ZP:                                             \
-                LSR_MEM(chip, EA_ZP(chip, instruction));            \
+                address = EA_ZP(chip, instruction);                 \
+                LSR_MEM(chip, address);                             \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);          \
                 break;                                              \
-                                                                     \
             case AM_ZP_X:                                           \
-                LSR_MEM(chip, EA_ZP_X(chip, instruction));          \
+                address = EA_ZP_X(chip, instruction);               \
+                LSR_MEM(chip, address);                             \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);          \
                 break;                                              \
-                                                                     \
             case AM_ABS:                                            \
-                LSR_MEM(chip, EA_ABS(chip, instruction));           \
+                address = EA_ABS(chip, instruction);                \
+                LSR_MEM(chip, address);                             \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);          \
                 break;                                              \
-                                                                     \
             case AM_ABS_X:                                          \
-                LSR_MEM(chip, EA_ABS_X(chip, instruction));         \
+                address = EA_ABS_X(chip, instruction);              \
+                LSR_MEM(chip, address);                             \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);          \
                 break;                                              \
-                                                                     \
             default:                                                \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);    \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);    \
                 exit(0);                                            \
         }                                                           \
         NEXT(chip, instruction);                                    \
@@ -358,29 +502,33 @@
 
 #define OP_ROL(chip, instruction)                                    \
     do {                                                             \
-        switch ((instruction)->mode) {                               \
+        uint16_t address;                                            \
+        switch ((instruction).mode) {                               \
             case AM_ACC:                                             \
                 ROL_ACC(chip);                                       \
                 break;                                               \
-                                                                     \
             case AM_ZP:                                              \
-                ROL_MEM(chip, EA_ZP(chip, instruction));             \
+                address = EA_ZP(chip, instruction);                  \
+                ROL_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ZP_X:                                            \
-                ROL_MEM(chip, EA_ZP_X(chip, instruction));           \
+                address = EA_ZP_X(chip, instruction);                \
+                ROL_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ABS:                                             \
-                ROL_MEM(chip, EA_ABS(chip, instruction));            \
+                address = EA_ABS(chip, instruction);                 \
+                ROL_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ABS_X:                                           \
-                ROL_MEM(chip, EA_ABS_X(chip, instruction));          \
+                address = EA_ABS_X(chip, instruction);               \
+                ROL_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             default:                                                 \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);     \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
                 exit(0);                                             \
         }                                                            \
         NEXT(chip, instruction);                                     \
@@ -410,29 +558,33 @@
 
 #define OP_ROR(chip, instruction)                                    \
     do {                                                             \
-        switch ((instruction)->mode) {                               \
+        uint16_t address;                                            \
+        switch ((instruction).mode) {                               \
             case AM_ACC:                                             \
                 ROR_ACC(chip);                                       \
                 break;                                               \
-                                                                     \
             case AM_ZP:                                              \
-                ROR_MEM(chip, EA_ZP(chip, instruction));             \
+                address = EA_ZP(chip, instruction);                  \
+                ROR_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ZP_X:                                            \
-                ROR_MEM(chip, EA_ZP_X(chip, instruction));           \
+                address = EA_ZP_X(chip, instruction);                \
+                ROR_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ABS:                                             \
-                ROR_MEM(chip, EA_ABS(chip, instruction));            \
+                address = EA_ABS(chip, instruction);                 \
+                ROR_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ABS_X:                                           \
-                ROR_MEM(chip, EA_ABS_X(chip, instruction));          \
+                address = EA_ABS_X(chip, instruction);               \
+                ROR_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             default:                                                 \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);     \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
                 exit(0);                                             \
         }                                                            \
         NEXT(chip, instruction);                                     \
@@ -447,7 +599,7 @@
 
 #define OP_AND(chip, instruction)                                   \
     do {                                                            \
-        switch ((instruction)->mode) {                              \
+        switch ((instruction).mode) {                              \
             case AM_IMM:                                            \
                 AND_VALUE(                                          \
                     chip,                                           \
@@ -473,7 +625,6 @@
                     chip,                                           \
                     (chip)->memory[EA_ABS_X(chip, instruction)]);   \
                 break;                                              \
-                                                                     \
             case AM_ABS_Y:                                          \
                 AND_VALUE(                                          \
                     chip,                                           \
@@ -490,7 +641,7 @@
                     (chip)->memory[EA_IND_Y(chip, instruction)]);   \
                 break;                                              \
             default:                                                \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);    \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);    \
                 exit(0);                                            \
         }                                                           \
         NEXT(chip, instruction);                                    \
@@ -505,7 +656,7 @@
 
 #define OP_EOR(chip, instruction)                                    \
     do {                                                             \
-        switch ((instruction)->mode) {                               \
+        switch ((instruction).mode) {                               \
             case AM_IMM:                                             \
                 EOR_VALUE(                                           \
                     chip,                                            \
@@ -547,7 +698,47 @@
                     (chip)->memory[EA_IND_Y(chip, instruction)]);    \
                 break;                                               \
             default:                                                 \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);     \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
+                exit(0);                                             \
+        }                                                            \
+        NEXT(chip, instruction);                                     \
+    } while (0)
+
+#define BIT_VALUE(chip, value)                                 \
+    do {                                                       \
+        if (((chip)->accumulator & (value)) == 0) {            \
+            (chip)->status_register |= 0x02;                   \
+        } else {                                               \
+            (chip)->status_register &= (uint8_t)~0x02;         \
+        }                                                      \
+        if ((value) & 0x80) {                                  \
+            (chip)->status_register |= 0x80;                   \
+        } else {                                               \
+            (chip)->status_register &= (uint8_t)~0x80;         \
+        }                                                      \
+        if ((value) & 0x40) {                                  \
+            (chip)->status_register |= 0x40;                   \
+        } else {                                               \
+            (chip)->status_register &= (uint8_t)~0x40;         \
+        }                                                      \
+        (chip)->status_register |= 0x20;                       \
+    } while (0)
+
+#define OP_BIT(chip, instruction)                                    \
+    do {                                                             \
+        switch ((instruction).mode) {                               \
+            case AM_ZP:                                              \
+                BIT_VALUE(                                           \
+                    chip,                                            \
+                    (chip)->memory[EA_ZP(chip, instruction)]);       \
+                break;                                               \
+            case AM_ABS:                                             \
+                BIT_VALUE(                                           \
+                    chip,                                            \
+                    (chip)->memory[EA_ABS(chip, instruction)]);      \
+                break;                                               \
+            default:                                                 \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
                 exit(0);                                             \
         }                                                            \
         NEXT(chip, instruction);                                     \
@@ -562,7 +753,7 @@
 
 #define OP_ORA(chip, instruction)                                    \
     do {                                                             \
-        switch ((instruction)->mode) {                               \
+        switch ((instruction).mode) {                               \
             case AM_IMM:                                             \
                 ORA_VALUE(                                           \
                     chip,                                            \
@@ -604,172 +795,169 @@
                     (chip)->memory[EA_IND_Y(chip, instruction)]);    \
                 break;                                               \
             default:                                                 \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);     \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
                 exit(0);                                             \
         }                                                            \
         NEXT(chip, instruction);                                     \
     } while (0)
 
-#define ADC_VALUE(chip, value)                                        \
-    do {                                                              \
-        uint8_t a = (chip)->accumulator;                              \
-        uint8_t c = (chip)->status_register & 0x01;                   \
-        uint16_t sum = (uint16_t)a + (uint16_t)(value) + c;           \
-                                                                      \
-        uint8_t overflow =                                            \
-            (uint8_t)(~(a ^ (value)) & (a ^ (uint8_t)sum) & 0x80);    \
-                                                                      \
-        if ((chip)->status_register & 0x08) { /* decimal mode */      \
-            if (((a & 0x0F) + ((value) & 0x0F) + c) > 9) {            \
-                sum += 0x06;                                          \
-            }                                                         \
-            if (sum > 0x99) {                                         \
-                sum += 0x60;                                          \
-            }                                                         \
-            (chip)->accumulator = (uint8_t)(sum & 0xFF);              \
-            SET_CARRY(chip, sum > 0x99);                              \
-        } else { /* binary mode */                                    \
-            (chip)->accumulator = (uint8_t)(sum & 0xFF);              \
-            SET_CARRY(chip, sum & 0x100);                             \
-        }                                                             \
-                                                                      \
-        SET_ZERO_AND_NEGATIVE_FLAGS(chip, (chip)->accumulator);       \
-        SET_OVERFLOW(chip, overflow);                                 \
+#define ADC_VALUE(chip, value)                                                       \
+    do {                                                                             \
+        uint8_t a = (chip)->accumulator;                                             \
+        uint8_t c = (chip)->status_register & 0x01;                                  \
+        uint16_t binary_sum = (uint16_t)a + (uint16_t)(value) + c;                   \
+        uint8_t overflow_source;                                                     \
+                                                                                     \
+        if ((chip)->status_register & 0x08) {                                        \
+            /* decimal mode */                                                        \
+            uint8_t low_nibble = (a & 0x0F) + ((value) & 0x0F) + c;                  \
+            uint8_t half_carry = (low_nibble > 9) ? 1 : 0;                           \
+            uint8_t high_nibble =                                                     \
+                ((a >> 4) & 0x0F) + ((value >> 4) & 0x0F) + half_carry;              \
+            uint8_t alu_result =                                                      \
+                (uint8_t)(((high_nibble & 0x0F) << 4) | ((low_nibble & 0x0F) & 0x0F)); \
+            if (low_nibble > 9) {                                                     \
+                low_nibble += 0x06;                                                   \
+            }                                                                         \
+            if (high_nibble > 0x9) {                                                  \
+                high_nibble += 0x06;                                                  \
+            }                                                                         \
+            uint8_t bcd_sum =                                                         \
+                (uint8_t)(((high_nibble & 0x0F) << 4) | ((low_nibble & 0x0F) & 0x0F)); \
+            (chip)->accumulator = (uint8_t)(bcd_sum & 0xFF);                          \
+            SET_ZERO_AND_NEGATIVE_FLAGS(chip, alu_result);                            \
+            SET_CARRY(chip, high_nibble > 0x0F);                                      \
+            overflow_source = alu_result;                                              \
+        } else { /* binary mode */                                                    \
+            (chip)->accumulator = (uint8_t)(binary_sum & 0xFF);                       \
+            SET_ZERO_AND_NEGATIVE_FLAGS(chip, (uint8_t)binary_sum);                   \
+            SET_CARRY(chip, binary_sum > 0xFF);                                       \
+            overflow_source = (uint8_t)binary_sum;                                     \
+        }                                                                             \
+        uint8_t overflow =                                                            \
+            (uint8_t)(~(a ^ (value)) & (a ^ overflow_source) & 0x80);                 \
+        SET_OVERFLOW(chip, overflow);                                                 \
     } while (0)
 
 #define OP_ADC(chip, instruction)                                      \
     do {                                                               \
-        switch ((instruction)->mode) {                                 \
+        switch ((instruction).mode) {                                 \
             case AM_IMM:                                               \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     VALUE_IMM(instruction));                           \
                 break;                                                 \
-                                                                       \
             case AM_ZP:                                                \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ZP(chip, instruction)]);         \
                 break;                                                 \
-                                                                       \
             case AM_ZP_X:                                              \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ZP_X(chip, instruction)]);       \
                 break;                                                 \
-                                                                       \
             case AM_ABS:                                               \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS(chip, instruction)]);        \
                 break;                                                 \
-                                                                       \
             case AM_ABS_X:                                             \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS_X(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             case AM_ABS_Y:                                             \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS_Y(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             case AM_IND_X:                                             \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_IND_X(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             case AM_IND_Y:                                             \
                 ADC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_IND_Y(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             default:                                                   \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);       \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);       \
                 exit(0);                                               \
         }                                                              \
         NEXT(chip, instruction);                                       \
     } while (0)
 
-#define SBC_VALUE(chip, value)                                        \
-    do {                                                              \
-        uint8_t a = (chip)->accumulator;                              \
-        uint8_t c = (chip)->status_register & 0x01;                   \
-        uint16_t diff = (uint16_t)a + (uint16_t)(~(value)) + c;       \
-                                                                      \
-        uint8_t overflow =                                            \
-            (uint8_t)(((a ^ diff) & (a ^ (value))) & 0x80);           \
-                                                                      \
-        if ((chip)->status_register & 0x08) { /* decimal mode */      \
-            if ((a & 0x0F) < (((value) & 0x0F) + (1 - c)))            \
-                diff -= 0x06;                                         \
-            if (diff > 0xFF)                                          \
-                diff -= 0x60;                                         \
-        }                                                             \
-                                                                      \
-        (chip)->accumulator = (uint8_t)(diff & 0xFF);                 \
-        SET_CARRY(chip, diff < 0x100);                                \
-        SET_ZERO_AND_NEGATIVE_FLAGS(chip, (chip)->accumulator);       \
-        SET_OVERFLOW(chip, overflow);                                 \
+#define SBC_VALUE(chip, value)                                                      \
+    do {                                                                            \
+        uint8_t a = (chip)->accumulator;                                            \
+        uint8_t c = (chip)->status_register & 0x01;                                 \
+        uint16_t difference = (uint16_t)a + (uint16_t)((uint8_t)~(value)) + c;      \
+        uint8_t overflow =                                                          \
+            (uint8_t)(((a ^ (uint8_t)difference) & (a ^ (value))) & 0x80);          \
+        uint8_t binary_difference = (uint8_t)difference;                            \
+                                                                                    \
+        SET_CARRY(chip, difference > 0xFF);                                         \
+                                                                                    \
+        if ((chip)->status_register & 0x08) { /* decimal mode */                    \
+            if ((a & 0x0F) < (((value) & 0x0F) + (1 - c))) {                        \
+                difference -= 0x06;                                                 \
+            }                                                                       \
+            if (difference < 0x100) {                                               \
+                difference -= 0x60;                                                 \
+            }                                                                       \
+        }                                                                           \
+        (chip)->accumulator = (uint8_t)(difference & 0xFF);                         \
+        SET_ZERO_AND_NEGATIVE_FLAGS(chip, binary_difference);                       \
+        SET_OVERFLOW(chip, overflow);                                               \
     } while (0)
 
 #define OP_SBC(chip, instruction)                                      \
     do {                                                               \
-        switch ((instruction)->mode) {                                 \
+        switch ((instruction).mode) {                                 \
             case AM_IMM:                                               \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     VALUE_IMM(instruction));                           \
                 break;                                                 \
-                                                                       \
             case AM_ZP:                                                \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ZP(chip, instruction)]);         \
                 break;                                                 \
-                                                                       \
             case AM_ZP_X:                                              \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ZP_X(chip, instruction)]);       \
                 break;                                                 \
-                                                                       \
             case AM_ABS:                                               \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS(chip, instruction)]);        \
                 break;                                                 \
-                                                                       \
             case AM_ABS_X:                                             \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS_X(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             case AM_ABS_Y:                                             \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS_Y(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             case AM_IND_X:                                             \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_IND_X(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             case AM_IND_Y:                                             \
                 SBC_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_IND_Y(chip, instruction)]);      \
                 break;                                                 \
-                                                                       \
             default:                                                   \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);       \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);       \
                 exit(0);                                               \
         }                                                              \
         NEXT(chip, instruction);                                       \
@@ -785,7 +973,7 @@
 
 #define OP_CMP(chip, instruction)                                      \
     do {                                                               \
-        switch ((instruction)->mode) {                                 \
+        switch ((instruction).mode) {                                 \
             case AM_IMM:                                               \
                 CMP_VALUE(                                             \
                     chip,                                              \
@@ -827,7 +1015,7 @@
                     (chip)->memory[EA_IND_Y(chip, instruction)]);      \
                 break;                                                 \
             default:                                                   \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);       \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);       \
                 exit(0);                                               \
         }                                                              \
         NEXT(chip, instruction);                                       \
@@ -843,27 +1031,24 @@
 
 #define OP_CPX(chip, instruction)                                      \
     do {                                                               \
-        switch ((instruction)->mode) {                                 \
+        switch ((instruction).mode) {                                 \
             case AM_IMM:                                               \
                 CPX_VALUE(                                             \
                     chip,                                              \
                     VALUE_IMM(instruction));                           \
                 break;                                                 \
-                                                                       \
             case AM_ZP:                                                \
                 CPX_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ZP(chip, instruction)]);         \
                 break;                                                 \
-                                                                       \
             case AM_ABS:                                               \
                 CPX_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS(chip, instruction)]);        \
                 break;                                                 \
-                                                                       \
             default:                                                   \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);       \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);       \
                 exit(0);                                               \
         }                                                              \
         NEXT(chip, instruction);                                       \
@@ -879,27 +1064,24 @@
 
 #define OP_CPY(chip, instruction)                                      \
     do {                                                               \
-        switch ((instruction)->mode) {                                 \
+        switch ((instruction).mode) {                                 \
             case AM_IMM:                                               \
                 CPY_VALUE(                                             \
                     chip,                                              \
                     VALUE_IMM(instruction));                           \
                 break;                                                 \
-                                                                       \
             case AM_ZP:                                                \
                 CPY_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ZP(chip, instruction)]);         \
                 break;                                                 \
-                                                                       \
             case AM_ABS:                                               \
                 CPY_VALUE(                                             \
                     chip,                                              \
                     (chip)->memory[EA_ABS(chip, instruction)]);        \
                 break;                                                 \
-                                                                       \
             default:                                                   \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);       \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);       \
                 exit(0);                                               \
         }                                                              \
         NEXT(chip, instruction);                                       \
@@ -913,21 +1095,30 @@
 
 #define OP_DEC(chip, instruction)                                    \
     do {                                                             \
-        switch ((instruction)->mode) {                               \
+        uint16_t address;                                            \
+        switch ((instruction).mode) {                               \
             case AM_ZP:                                              \
-                DEC_MEM(chip, EA_ZP(chip, instruction));             \
+                address = EA_ZP(chip, instruction);                  \
+                DEC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
             case AM_ZP_X:                                            \
-                DEC_MEM(chip, EA_ZP_X(chip, instruction));           \
+                address = EA_ZP_X(chip, instruction);                \
+                DEC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
             case AM_ABS:                                             \
-                DEC_MEM(chip, EA_ABS(chip, instruction));            \
+                address = EA_ABS(chip, instruction);                 \
+                DEC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
             case AM_ABS_X:                                           \
-                DEC_MEM(chip, EA_ABS_X(chip, instruction));          \
+                address = EA_ABS_X(chip, instruction);               \
+                DEC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
             default:                                                 \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);     \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
                 exit(0);                                             \
         }                                                            \
         NEXT(chip, instruction);                                     \
@@ -957,25 +1148,30 @@
 
 #define OP_INC(chip, instruction)                                    \
     do {                                                             \
-        switch ((instruction)->mode) {                               \
+        uint16_t address;                                            \
+        switch ((instruction).mode) {                               \
             case AM_ZP:                                              \
-                INC_MEM(chip, EA_ZP(chip, instruction));             \
+                address = EA_ZP(chip, instruction);                  \
+                INC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ZP_X:                                            \
-                INC_MEM(chip, EA_ZP_X(chip, instruction));           \
+                address = EA_ZP_X(chip, instruction);                \
+                INC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ABS:                                             \
-                INC_MEM(chip, EA_ABS(chip, instruction));            \
+                address = EA_ABS(chip, instruction);                 \
+                INC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             case AM_ABS_X:                                           \
-                INC_MEM(chip, EA_ABS_X(chip, instruction));          \
+                address = EA_ABS_X(chip, instruction);               \
+                INC_MEM(chip, address);                              \
+                detect_self_modifying_code(chip, address, dispatch, translate_instruction);           \
                 break;                                               \
-                                                                     \
             default:                                                 \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);     \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);     \
                 exit(0);                                             \
         }                                                            \
         NEXT(chip, instruction);                                     \
@@ -999,7 +1195,7 @@
 
 #define OP_BCC(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if (!((chip)->status_register & 0x1)) {             \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1008,7 +1204,7 @@
 
 #define OP_BCS(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if ((chip)->status_register & 0x1) {                \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1017,7 +1213,7 @@
 
 #define OP_BEQ(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if ((chip)->status_register & 0x2) {                \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1026,7 +1222,7 @@
 
 #define OP_BMI(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if ((chip)->status_register & 0x80) {               \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1035,7 +1231,7 @@
 
 #define OP_BNE(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if (!((chip)->status_register & 0x2)) {             \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1044,7 +1240,7 @@
 
 #define OP_BPL(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if (!((chip)->status_register & 0x80)) {            \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1053,7 +1249,7 @@
 
 #define OP_BVC(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if (!((chip)->status_register & 0x40)) {            \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1062,7 +1258,7 @@
 
 #define OP_BVS(chip, instruction)                           \
     do {                                                    \
-        int8_t offset = (int8_t)(instruction)->operand;     \
+        int8_t offset = (int8_t)(instruction).operand;     \
         if ((chip)->status_register & 0x40) {               \
             (chip)->program_counter += offset;              \
         }                                                   \
@@ -1073,7 +1269,7 @@
     do {                                                                                        \
         uint16_t pc_before = (chip)->program_counter;                                           \
         uint16_t address;                                                                       \
-        switch ((instruction)->mode) {                                                          \
+        switch ((instruction).mode) {                                                          \
             case AM_ABS: {                                                                      \
                 address = EA_ABS(chip, instruction);                                            \
                 if (address == pc_before) {                                                     \
@@ -1089,7 +1285,7 @@
                 break;                                                                          \
             }                                                                                   \
             default:                                                                            \
-                fprintf(stderr, LOG_INSTRUCTION_DOES_NOT_EXIST);                                \
+                REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);                                        \
                 exit(0);                                                                        \
         }                                                                                       \
         JUMP(chip, instruction, address);                                                       \
@@ -1098,7 +1294,7 @@
 #define OP_JSR(chip, instruction)                                                               \
     do {                                                                                        \
         uint16_t jump_address = EA_ABS(chip, instruction);                                      \
-        uint16_t return_address = (chip)->program_counter + (instruction)->spc_byte_offset;     \
+        uint16_t return_address = (chip)->program_counter + (instruction).spc_byte_offset - 1;  \
         PUSH_TO_STACK(chip, return_address >> 8);                                               \
         PUSH_TO_STACK(chip, return_address & 0xFF);                                             \
         JUMP(chip, instruction, jump_address);                                                  \
@@ -1106,14 +1302,20 @@
 
 #define OP_RTS(chip, instruction)                                                               \
     do {                                                                                        \
-        uint16_t return_address = PULL_FROM_STACK(chip) | (PULL_FROM_STACK(chip) << 8);         \
+        uint8_t lo = PULL_FROM_STACK(chip);                                                     \
+        uint8_t hi = PULL_FROM_STACK(chip);                                                     \
+        uint16_t return_address =                                                               \
+            ((uint16_t)lo | ((uint16_t)hi << 8)) + 1;                                          \
         JUMP(chip, instruction, return_address);                                                \
     } while (0)
 
 #define OP_RTI(chip, instruction)                                                               \
     do {                                                                                        \
         (chip)->status_register = PULL_FROM_STACK(chip) | 0x30;                                 \
-        uint16_t return_address = PULL_FROM_STACK(chip) | (PULL_FROM_STACK(chip) << 8);         \
+        uint8_t lo = PULL_FROM_STACK(chip);                                                     \
+        uint8_t hi = PULL_FROM_STACK(chip);                                                     \
+        uint16_t return_address =                                                               \
+            ((uint16_t)lo | ((uint16_t)hi << 8));                                              \
         JUMP(chip, instruction, return_address);                                                \
     } while (0)
 
@@ -1161,10 +1363,11 @@
 
 #define OP_BRK(chip, instruction)                                                                   \
     do {                                                                                            \
-        uint16_t return_address = (chip)->program_counter + (instruction)->spc_byte_offset;         \
+        uint16_t return_address =                                                                   \
+            (chip)->program_counter + (instruction).spc_byte_offset + 1;                           \
         PUSH_TO_STACK(chip, return_address >> 8);                                                   \
         PUSH_TO_STACK(chip, return_address & 0xFF);                                                 \
-        PUSH_TO_STACK(chip, (chip)->status_register);                                               \
+        PUSH_TO_STACK(chip, (chip)->status_register | 0x30);                                        \
         (chip)->status_register |= 0x04;                                                            \
         JUMP(chip, instruction, (chip)->memory[0xFFFE] | ((chip)->memory[0xFFFF] << 8));            \
     } while (0)
@@ -1243,6 +1446,10 @@
 [0x39] = { &&OP_AND, AM_ABS_Y }, \
 [0x21] = { &&OP_AND, AM_IND_X }, \
 [0x31] = { &&OP_AND, AM_IND_Y }, \
+\
+/* bit test */ \
+[0x24] = { &&OP_BIT, AM_ZP }, \
+[0x2C] = { &&OP_BIT, AM_ABS }, \
 \
 /* bitwise or */ \
 [0x09] = { &&OP_ORA, AM_IMM }, \

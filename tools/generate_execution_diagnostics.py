@@ -1,12 +1,18 @@
+#!/usr/bin/env python3
+
+import argparse
 import json
+import logging
+import os
+import subprocess
 import sys
-from itertools import zip_longest
+from pathlib import Path
+
+from py65.devices.mpu6502 import MPU
 
 CONTEXT = 20
-
-# =========================
-# Addressing Modes
-# =========================
+EMULATION_MODES = ("FETCH_DECODE_EXECUTE", "DIRECT_THREADED")
+LOGGER = logging.getLogger("diagnostics")
 
 IMPLIED = "Implied"
 ACCUMULATOR = "Accumulator"
@@ -22,10 +28,6 @@ INDEXED_INDIRECT = "(Indirect,X)"
 INDIRECT_INDEXED = "(Indirect),Y"
 RELATIVE = "Relative"
 
-# =========================
-# Opcode Table
-# OPCODE → (Mnemonic, Mode, Description)
-# =========================
 
 OPCODE_TABLE = {
 
@@ -167,10 +169,6 @@ OPCODE_TABLE = {
     "F8": ("SED", IMPLIED, "Set Decimal Mode"),
 }
 
-# =========================
-# Decoder
-# =========================
-
 def decode_opcode(opcode):
     opcode = opcode.upper()
     if opcode in OPCODE_TABLE:
@@ -239,10 +237,6 @@ def decode_operand(addressing_mode, program_counter, program_image):
 
     return None
 
-# =========================
-# Trace Parsing
-# =========================
-
 def parse_line(line, program_image=None):
     parts = line.strip().split()
 
@@ -269,34 +263,91 @@ def parse_line(line, program_image=None):
         "raw_trace": line.strip()
     }
 
-def load_file(path):
-    with open(path, "r") as f:
-        return f.readlines()
-
-
 def load_program_image(path):
     with open(path, "rb") as f:
         return f.read()
 
-# =========================
-# Diff Engine
-# =========================
+def run_local_implementation(binary_path, emulation_mode):
+    LOGGER.info("Starting local run for mode=%s", emulation_mode)
+    env = dict(os.environ)
+    env["EMULATION_MODE"] = emulation_mode
+    completed = subprocess.run(
+        [str(binary_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if completed.returncode != 0:
+        LOGGER.error(
+            "Local run failed for mode=%s (exit_code=%d)",
+            emulation_mode,
+            completed.returncode,
+        )
+        raise RuntimeError(
+            "Local implementation failed "
+            f"(mode={emulation_mode}, exit_code={completed.returncode}):\n{completed.stderr.strip()}"
+        )
+    LOGGER.info(
+        "Completed local run for mode=%s (trace_lines=%d)",
+        emulation_mode,
+        len(completed.stdout.splitlines()),
+    )
+    return completed.stdout.splitlines(keepends=True)
 
-def main(mine_path, ref_path, program_path):
-    mine_lines = load_file(mine_path)
-    ref_lines = load_file(ref_path)
+
+def generate_py65_reference_trace(program_path):
+    LOGGER.info("Generating py65 reference trace from program=%s", program_path)
+    mpu = MPU()
+
+    with open(program_path, "rb") as f:
+        data = f.read()
+
+    for i, byte in enumerate(data):
+        mpu.memory[i] = byte
+
+    mpu.pc = 0x0400
+
+    lines = []
+
+    while True:
+        pc = mpu.pc
+        opcode = mpu.memory[pc]
+        lines.append(f"{pc:04X} {mpu.a:02X} {mpu.x:02X} {mpu.y:02X} {mpu.sp:02X} {mpu.p:02X} {opcode:02X}\n")
+
+        if opcode == 0x4C:
+            lo = mpu.memory[pc + 1]
+            hi = mpu.memory[pc + 2]
+            target = (hi << 8) | lo
+            if target == pc:
+                break
+
+        mpu.step()
+
+    LOGGER.info("Completed py65 reference generation (trace_lines=%d)", len(lines))
+    return lines
+
+
+def compare_execution_traces(local_trace_lines, reference_trace_lines, program_path):
+    LOGGER.info(
+        "Comparing traces (local_lines=%d, reference_lines=%d)",
+        len(local_trace_lines),
+        len(reference_trace_lines),
+    )
+    mine_lines = local_trace_lines
+    ref_lines = reference_trace_lines
     program_image = load_program_image(program_path)
 
     divergence = None
 
-    for idx, (mine, ref) in enumerate(zip_longest(mine_lines, ref_lines)):
+    for idx, (mine, ref) in enumerate(zip(mine_lines, ref_lines)):
         if mine != ref:
             divergence = idx
             break
 
     if divergence is None:
-        print(json.dumps({"status": "IDENTICAL_EXECUTION"}, indent=4))
-        return
+        LOGGER.info("Comparison complete: IDENTICAL_EXECUTION")
+        return {"status": "IDENTICAL_EXECUTION"}
 
     start = max(0, divergence - CONTEXT)
     end = divergence + CONTEXT + 1
@@ -306,7 +357,7 @@ def main(mine_path, ref_path, program_path):
 
         "divergence_visible_at": {
             "line_number": divergence + 1,
-            "mine": parse_line(mine_lines[divergence], program_image),
+            "implementation_trace": parse_line(mine_lines[divergence], program_image),
             "reference": parse_line(ref_lines[divergence], program_image)
         },
 
@@ -318,7 +369,7 @@ def main(mine_path, ref_path, program_path):
     if divergence > 0:
         result["root_cause_instruction"] = {
             "line_number": divergence,
-            "mine": parse_line(mine_lines[divergence - 1], program_image),
+            "implementation_trace": parse_line(mine_lines[divergence - 1], program_image),
             "reference": parse_line(ref_lines[divergence - 1], program_image),
             "note": "Instruction causing incorrect state transition"
         }
@@ -326,22 +377,97 @@ def main(mine_path, ref_path, program_path):
     for i in range(start, min(end, len(mine_lines), len(ref_lines))):
         result["execution_context"].append({
             "line_number": i + 1,
-            "mine": parse_line(mine_lines[i], program_image),
+            "implementation_trace": parse_line(mine_lines[i], program_image),
             "reference": parse_line(ref_lines[i], program_image),
             "states_match": mine_lines[i] == ref_lines[i]
         })
 
-    print(json.dumps(result, indent=4))
-
-# =========================
-# Entry Point
-# =========================
+    LOGGER.info("Comparison complete: DIVERGENCE_DETECTED at line=%d", divergence + 1)
+    return result
 
 if __name__ == "__main__":
-    default_program_path = "/home/chinmay/Work/codebases/mos6502/tests/functional/6502_functional_test.bin"
-    if len(sys.argv) not in (3, 4):
-        print("Usage: python diff.py <mine.txt> <py65.txt> [program.bin]")
-        sys.exit(1)
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent
 
-    program_path = sys.argv[3] if len(sys.argv) == 4 else default_program_path
-    main(sys.argv[1], sys.argv[2], program_path)
+    parser = argparse.ArgumentParser(
+        description="Run local mos6502, generate py65 reference trace, compare, and emit JSON diagnostics."
+    )
+    parser.add_argument(
+        "--binary",
+        type=Path,
+        default=project_root / "cmake-build-debug" / "mos6502",
+        help="Path to local mos6502 binary.",
+    )
+    parser.add_argument(
+        "--program",
+        type=Path,
+        default=project_root / "tests" / "functional" / "6502_functional_test.bin",
+        help="Path to the functional test binary.",
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=script_dir / "execution_trace_diagnostic_report.json",
+        help="Path to write diagnostic JSON report.",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Runtime logging verbosity.",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        stream=sys.stderr,
+        force=True,
+    )
+
+    LOGGER.info("Diagnostics start")
+    LOGGER.info("Binary path: %s", args.binary.resolve())
+    LOGGER.info("Program path: %s", args.program.resolve())
+    LOGGER.info("Report path: %s", args.report.resolve())
+
+    reference_trace_lines = generate_py65_reference_trace(args.program.resolve())
+
+    mode_reports = {}
+    for mode in EMULATION_MODES:
+        LOGGER.info("Processing mode=%s", mode)
+        try:
+            local_trace_lines = run_local_implementation(args.binary.resolve(), mode)
+            comparison = compare_execution_traces(local_trace_lines, reference_trace_lines, args.program.resolve())
+            mode_reports[mode] = {
+                "status": comparison.get("status", "UNKNOWN"),
+                "local_trace_line_count": len(local_trace_lines),
+                "reference_trace_line_count": len(reference_trace_lines),
+                "comparison": comparison,
+            }
+        except Exception as exc:
+            LOGGER.exception("Mode processing failed for mode=%s", mode)
+            mode_reports[mode] = {
+                "status": "EXECUTION_FAILED",
+                "local_trace_line_count": 0,
+                "reference_trace_line_count": len(reference_trace_lines),
+                "error": str(exc),
+            }
+
+    all_modes_match_reference = all(
+        mode_report.get("status") == "IDENTICAL_EXECUTION"
+        for mode_report in mode_reports.values()
+    )
+
+    report = {
+        "status": "ALL_MODES_IDENTICAL" if all_modes_match_reference else "MODE_DIVERGENCE_DETECTED",
+        "emulation_modes_checked": list(EMULATION_MODES),
+        "all_modes_match_reference": all_modes_match_reference,
+        "results_by_mode": mode_reports,
+    }
+
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    with open(args.report, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=4)
+
+    LOGGER.info("Diagnostics complete (status=%s)", report["status"])
+    print(f"Diagnostic report written: {args.report.resolve()}")
