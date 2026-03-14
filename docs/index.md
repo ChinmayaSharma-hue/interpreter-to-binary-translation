@@ -3,7 +3,7 @@ layout: default
 title: Home
 ---
 
-# going from a simple interpreter to a dynamic binary translator
+# Going from a simple interpreter to a dynamic binary translator
 
 I was interested in understanding how QEMU and other emulators work, so I spent a lot of time trying to read and understand
 dynamic binary translators. This ended up being futile as a lot of these projects were very mature and hard to get into without understanding
@@ -16,7 +16,7 @@ own opcode.
 This was the plan,
 1. writing a tiny interpreter for a simple self-designed ISA
 2. writing a CHIP-8 interpreter
-3. writing a dynamic binary translator for MOS 6502, [https://www.masswerk.at/6502/6502_instruction_set.html] 
+3. writing a dynamic binary translator for MOS 6502, 
     1. implementing a basic fetch-decode-execute interpreter
     2. implementing a direct threaded implementation with precoding
     3. benchmark the interpreter against the optimized versions of binary exectution, find out what exactly gives the performance boost
@@ -25,7 +25,7 @@ This was the plan,
     6. invent a tiny IR and implement translation from IR to host
     7. benchmark the IR exection against direct translation
 
-### writing a tiny interpreter for a simple self-designed ISA
+## Writing a tiny interpreter for a simple self-designed ISA
 A very trashy ISA that is sufficient to understand interpreter semantics.
 1. Add,
     1. `ADD r[x], r[y], r[z]`, where the sum of `r[y]` and `r[z]` are stored in `r[x]`
@@ -78,7 +78,7 @@ The encoding,
         2. mode, `1`
         3. operands, two 3-bit register addressing values
 
-### writing a CHIP-8 interpreter
+### Writing a CHIP-8 interpreter
  Going from the custom ISA to CHIP-8 is not a big deal, all I have to do now is to understand the instruction set and implement it in the same way.
  So I didn't do anything flashy,
  ```c 
