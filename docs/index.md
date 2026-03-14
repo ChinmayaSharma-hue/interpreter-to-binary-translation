@@ -78,7 +78,7 @@ The encoding,
         2. mode, `1`
         3. operands, two 3-bit register addressing values
 
-### Writing a CHIP-8 interpreter
+## Writing a CHIP-8 interpreter
  Going from the custom ISA to CHIP-8 is not a big deal, all I have to do now is to understand the instruction set and implement it in the same way.
  So I didn't do anything flashy,
  ```c 
