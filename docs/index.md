@@ -13,8 +13,9 @@ coming across performance and correctness issues and finding the minimal solutio
 is very similar to the implementations of dynamic binary translators.
 
 The following topics will be addressed,
-- [Fetch-Decode-Execute]({{ '/fetch-decode-execute/' | relative_url }})
-- [Direct Threading]({{ '/direct-threading/' | relative_url }})
+- [How can we execute a program compiled for another architecture?]({{ '/fetch-decode-execute/' | relative_url }})
+- [How can we remove dispatch branches?]({{ '/direct-threading-with-static-precoding/' | relative_url }})
+- [How can we fix issues with static precoding?]({{ '/direct-threading-with-dynamic-precoding/' | relative_url }})
 
 ### Terminology
 

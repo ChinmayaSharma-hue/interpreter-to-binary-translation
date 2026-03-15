@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Interpreter for CHIP-8
-permalink: /direct-threading/
+permalink: /direct-threading-with-static-precoding/
 ---
 
 ### Problem Context
