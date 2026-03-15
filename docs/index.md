@@ -14,4 +14,4 @@ is very similar to the implementations of dynamic binary translators.
 
 The following topics will be addressed,
 - [Fetch-Decode-Execute]({{ '/fetch-decode-execute/' | relative_url }})
-- [Direct Threading]{{ '/direct-threading/' | relative_url }}
+- [Direct Threading]({{ '/direct-threading/' | relative_url }})
