@@ -18,22 +18,30 @@ The goal is to find a solution that removes these branches.
 
 ### Minimal Solution
 The overhead can be recovered by reducing the number of branches. 
-- **Removing the function call overhead**, The opcode handlers do not need to be implemented as functions, they can be implemented as labels with gotos within each label to jump between the labels without needing a central dispatch loop.
-- **Jumping to the label address**, If the instruction handlers are implemented as labels, after executing the instruction, a branch to the next instruction handler needs to happen, the goto for that instruction must be computed
-- **Computation of goto address**, The computation of the address to which a goto must occur in each instruction will involve finding out what the opcode of the next instruction is and then finding the mapping for that opcode to the label address
+- **Removing the function call overhead**, the opcode handlers do not need to be implemented as functions, they can be implemented as labels with gotos within each label to jump between the labels without needing a central dispatch loop.
+- **Jumping to the label address**, if the instruction handlers are implemented as labels, after executing the instruction, a branch to the next instruction handler needs to happen, the goto for that instruction must be computed
+- **Computation of goto address**, the computation of the address to which a goto must occur in each instruction will involve finding out what the opcode of the next instruction is and then finding the mapping for that opcode to the label address
 - **Removing the overhead of computing goto address at runtime**, to reduce the runtime overhead of finding the mapping from opcode to the corresponding label address, the set of instructions can be statically precoded into a structure and added to a code cache, from which the instructions can be executed by jumping to the corresponding label address that is already computed prior to execution
 
 ### Implementation
 
 To remove the overhead of computing goto address at runtime, 
 
+Translation in a loop,
+
+![img_1.png](img_1.png)
+
+Execution,
+
+![img_2.png](img_2.png)
+
 1. Precoding can be used to convert the raw instructions into the following struct,
     ```c
     typedef struct {
-    void *handler;
-    addressing_mode_t mode;
-    uint16_t operand;
-    uint8_t spc_byte_offset;
+        void *handler;
+        addressing_mode_t mode;
+        uint16_t operand;
+        uint8_t spc_byte_offset;
     } threaded_instructions_t;
     ```
     - The `handler` pointer points to the label address of the opcode implementation
@@ -43,16 +51,16 @@ To remove the overhead of computing goto address at runtime,
 2. Caching the precoded instructions in a code cache,
    ```c
     typedef struct {
-    uint8_t accumulator;
-    uint8_t index_x_register;
-    uint8_t index_y_register;
-    uint8_t status_register;
-    uint8_t stack_pointer;
-    uint16_t program_counter;
-    uint8_t memory[65536];
-    size_t cache_length;
-    threaded_instructions_t code_cache[CODE_CACHE_CAPACITY];
-    uint16_t translation_map[CODE_CACHE_CAPACITY];
+        uint8_t accumulator;
+        uint8_t index_x_register;
+        uint8_t index_y_register;
+        uint8_t status_register;
+        uint8_t stack_pointer;
+        uint16_t program_counter;
+        uint8_t memory[65536];
+        size_t cache_length;
+        threaded_instructions_t code_cache[CODE_CACHE_CAPACITY];
+        uint16_t translation_map[CODE_CACHE_CAPACITY];
     } chip_t;
     ```
     - The `code_cache` is used to store the threaded instructions

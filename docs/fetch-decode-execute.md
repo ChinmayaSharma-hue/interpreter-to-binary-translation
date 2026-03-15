@@ -11,6 +11,8 @@ A binary compiled for one instruction set needs to be executed in a machine with
 A process that maintains a state corresponding to the architecture of the machine for which the binary was compiled for,
 and handlers for each opcode in the original instruction set. The instructions in the binary are fetched, decoded and executed.
 
+In a loop,
+
 ![img.png](img.png)
 
 ### Implementation
