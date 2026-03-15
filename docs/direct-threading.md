@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Interpreter for CHIP-8
-permalink: /chip-8/
+permalink: /direct-threading/
 ---
 
 ### Problem Context

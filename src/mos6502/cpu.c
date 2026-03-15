@@ -7,6 +7,7 @@
 #include <string.h>
 #include "mos6502/cpu.h"
 #include "mos6502/interpreter_engine.h"
+#include "mos6502/trace.h"
 
 
 int load_program(chip_t* chip, const char* program_path) {
@@ -43,17 +44,10 @@ void cpu_reset(chip_t* chip) {
 }
 
 void cpu_step_interpreter(chip_t* chip) {
+    TRACE_CPU_STATE(chip);
+
     const uint16_t pc_before = chip->program_counter;
     const uint8_t opcode = chip->memory[chip->program_counter++];
-
-    printf("%04X %02X %02X %02X %02X %02X %02X\n",
-           pc_before,
-           chip->accumulator,
-           chip->index_x_register,
-           chip->index_y_register,
-           chip->stack_pointer,
-           chip->status_register,
-           opcode);
 
     if (opcode == 0x4C) {
         const uint8_t lo = chip->memory[chip->program_counter];

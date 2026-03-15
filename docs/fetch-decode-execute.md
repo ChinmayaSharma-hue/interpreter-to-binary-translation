@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Fetch-Decode-Execute
-permalink: /custom-isa/
+permalink: /fetch-decode-execute/
 ---
 
 ### Problem Context
