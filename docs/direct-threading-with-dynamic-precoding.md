@@ -215,4 +215,4 @@ The modification of execution,
        goto current_instr.handler                                                            \
    ```
    The function `translate` is called which dynamically precodes the next batch of instructions, which couldn't have been statically precoded due to issues with code discovery. 
-   The reason `translate` function is called, is due to code discovery problem. There could be data interspersed with code, which could not be detected initially during static translation, so those instructions are dynamically translated and added to cache during runtime.
+   The dynamic translation is necessary as static translation could not have discovered all the sections of memory which contain code, and this is due to the code discovery problem. 
