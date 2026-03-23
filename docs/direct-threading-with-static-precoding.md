@@ -37,12 +37,11 @@ Execution,
 
 1. Precoding can be used to convert the raw instructions into the following struct,
     ```c
-    typedef struct {
-        void *handler;
-        addressing_mode_t mode;
-        uint16_t operand;
-        uint8_t spc_byte_offset;
-    } threaded_instructions_t;
+     threaded_instr:
+        handler         
+        mode            
+        operand         
+        spc_byte_offset 
     ```
     - The `handler` pointer points to the label address of the opcode implementation
     - The `mode` helps in switching between the modes within the same operation
@@ -50,82 +49,74 @@ Execution,
     - The `spc_byte_offet` is used for incrementing the source program counter to maintain the correct value for the source program counter
 2. Caching the precoded instructions in a code cache,
    ```c
-    typedef struct {
-        uint8_t accumulator;
-        uint8_t index_x_register;
-        uint8_t index_y_register;
-        uint8_t status_register;
-        uint8_t stack_pointer;
-        uint16_t program_counter;
-        uint8_t memory[65536];
-        size_t cache_length;
-        threaded_instructions_t code_cache[CODE_CACHE_CAPACITY];
-        uint16_t translation_map[CODE_CACHE_CAPACITY];
-    } chip_t;
+    cpu_state:
+        accumulator
+        index_x, index_y
+        status_register
+        stack_pointer
+        program_counter
+        memory[65536]
+        code_cache[CODE_CACHE_CAPACITY]  
+        translation_map[MEMORY_SIZE]    
+        cache_length
     ```
     - The `code_cache` is used to store the threaded instructions
     - The translation map is used to store the mapping from source program counter to the corresponding index in the code cache which contains the precoded instruction
     - The `cache_length` is used to maintain a running index of the translated program counter
 3. Static translation of instructions before execution to populate the code cache,
    ```c
-   void cpu_translate(chip_t* chip, const decode_entry_t *dispatch) {
-    uint16_t spc_translate = chip->program_counter;
-    uint16_t tpc = 0;
-    while (tpc < CODE_CACHE_CAPACITY) {
-        const uint8_t opcode = chip->memory[spc_translate];
+   function translate(cpu_state, dispatch_table):
+    spc ← cpu_state.program_counter   // source program counter
+    tpc ← 0                           // target (cache) index
 
-        // validity and bound checks
-        if (!valid_opcode[opcode]) break;
-        const uint8_t length = instruction_length[opcode];
-        if (spc_translate+length > MEMORY_SIZE) break;
+    while tpc < CODE_CACHE_CAPACITY:
+        opcode ← memory[spc]
 
-        // construction of the threaded instruction
-        threaded_instructions_t instruction = {
-            .handler = dispatch[opcode].handler,
-            .mode = dispatch[opcode].mode,
-            .spc_byte_offset = length
-        };
-        if (length == 2) {
-            instruction.operand = chip->memory[spc_translate+1];
-        } else if (length == 3) {
-            instruction.operand = chip->memory[spc_translate+1] | (chip->memory[spc_translate+2] << 8);
-        }
-        chip->code_cache[tpc] = instruction;
-        chip->cache_length += 1;
-        chip->translation_map[spc_translate] = &chip->code_cache[tpc];
+        if opcode is not valid:  break
+        if spc + instruction_length[opcode] > MEMORY_SIZE:  break
 
-        // increments
-        tpc++;
-        spc_translate += length;
-    }
+        threaded_instr ←
+            handler        : dispatch_table[opcode].label_address
+            mode           : dispatch_table[opcode].addressing_mode
+            operand        : bytes at memory[spc+1 .. spc+length]   
+            spc_byte_offset: instruction_length[opcode]
+
+        code_cache[tpc]        ← threaded_instr
+        translation_map[spc]   ← &code_cache[tpc]   
+
+        tpc ← tpc + 1
+        spc ← spc + instruction_length[opcode]
    ```
    The translation is done until either one of the following is true,
    - The code cache is full
    - The opcode of the instruction being translated is not valid, therefore it is not an instruction
 4. Execution of instructions in the code cache,
    ```c 
-   void cpu_run_threaded(chip_t* chip) {
-       threaded_instructions_t *instruction = {};
-       __label__ <labels>;
-   
-       static const decode_entry_t dispatch[256] = {
-           DECODE_TABLE_CONTENT
-       };
-   
-       if (chip->cache_length == 0) {
-           cpu_translate(chip, dispatch);
-       }
-   
-       if (chip->translation_map[chip->program_counter] == NULL) {
-           fprintf(stderr, LOG_TRANSLATION_DOES_NOT_EXIST);
-           exit(0);
-       }
-   
-       instruction = chip->translation_map[chip->program_counter];
-       TRACE_CPU_STATE(chip);
-       goto *instruction->handler; 
-   
-      <label_implementations>
-   }
+   function run(cpu_state):
+    if code_cache is empty:
+        translate(cpu_state, dispatch_table)
+
+    if translation_map[cpu_state.program_counter] is NULL:
+        error "no translation exists for this PC"
+        halt
+
+    instruction ← translation_map[cpu_state.program_counter]
+    goto instruction->handler
+
+    ---
+
+    label LDA:
+        // perform load accumulator ...
+        cpu_state.program_counter ← cpu_state.program_counter + instruction->spc_byte_offset
+        next ← translation_map[cpu_state.program_counter]
+        goto next->handler         // ← no central loop, direct jump to next handler
+
+    label JMP:
+        // compute jump target ...
+        cpu_state.program_counter ← target
+        next ← translation_map[cpu_state.program_counter]
+        goto next->handler
+
+    // all other labels follow the same tail-jump pattern
    ```
    The static translation happens first, and then the first threaded instruction is obtained, with goto to the corresponding label address.
