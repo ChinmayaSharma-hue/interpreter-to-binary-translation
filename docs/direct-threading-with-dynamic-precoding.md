@@ -128,60 +128,64 @@ The modification of execution,
    The way self modifying code could work,
    
    ![img_7.png](img_7.png)
-   1. Original state,
-   ```asm
-   LDA $01
-   STA $10
-   LDA $02
-   STA $11
-   ```
-   2. First write,
-   ```asm
-   LDA $01
-   JMP $A910
-   <INVALID>        
-   STA $11
-   ```
-      The function,
-      - detects the address to which a write has occured as an instruction address
-      - detects the address to which a write has occured already has a translation in the cache
-      - calls the `translate_one` function to translate the updated instruction, which adds a new translation to the cache
-   3. Second write,
-   ```asm
-   LDA $01
-   JMP $A906
-   <INVALID>        
-   STA $11
-   ```
-      The function,
-      - detects the address to which a write has occured as an instruction address
-      - detects the address to which a write has occured already has a translation in the cache
-      - calls the `translate_one` function to translate the updated instruction, which updates the new translation in the cache
-      - notices that the code boundaries has been changed, and calls `translate_one` till the instruction memory is observed to be valid
-   4. Third write,
-   ```asm
-   LDA $01
-   JMP $0806
-   <INVALID>
-   STA $11
-   ```
-      The function,
-      - detects the address to which a write has occured as an instruction address
-      - detects the address to which a write has occured already has a translation in the cache
-      - calls the `translate_one` function to translate the updated instruction, which updates the new translation in the cache
-      - notices that the code boundaries has been changed, and calls `translate_one` till the instruction memory is observed to be valid
-   5. Fourth write,
-   ```asm
-   LDA $01
-   JMP $0806
-   BRK
-   STA $11
-   ```
-   The function,
-   - detects the address to which a write has occured as an instruction address
-   - detects the address to which a write has occured already has a translation in the cache
-   - calls the `translate_one` function to translate the updated instruction, which adds a new translation to the cache
-   - notices that the code boundaries are now not changed
+   1. Original state:
+      ```asm
+      LDA $01
+      STA $10
+      LDA $02
+      STA $11
+      ```
+
+   2. First write:
+      ```asm
+      LDA $01
+      JMP $A910
+      <INVALID>
+      STA $11
+      ```
+      The function:
+      - detects the address to which a write has occurred as an instruction address
+      - detects the address already has a translation in the cache
+      - calls the `translate_one` function to translate the updated instruction, adding a new translation to the cache
+
+   3. Second write:
+      ```asm
+      LDA $01
+      JMP $A906
+      <INVALID>
+      STA $11
+      ```
+      The function:
+      - detects the address to which a write has occurred as an instruction address
+      - detects the address already has a translation in the cache
+      - calls the `translate_one` function to translate the updated instruction, updating the translation in the cache
+      - notices that the code boundaries have changed and calls `translate_one` repeatedly until the instruction memory is valid
+
+   4. Third write:
+      ```asm
+      LDA $01
+      JMP $0806
+      <INVALID>
+      STA $11
+      ```
+      The function:
+      - detects the address to which a write has occurred as an instruction address
+      - detects the address already has a translation in the cache
+      - calls the `translate_one` function to translate the updated instruction, updating the translation in the cache
+      - notices that the code boundaries have changed and calls `translate_one` repeatedly until the instruction memory is valid
+
+   5. Fourth write:
+      ```asm
+      LDA $01
+      JMP $0806
+      BRK
+      STA $11
+      ```
+      The function:
+      - detects the address to which a write has occurred as an instruction address
+      - detects the address already has a translation in the cache
+      - calls the `translate_one` function to translate the updated instruction, adding a new translation to the cache
+      - notices that the code boundaries are no longer changing
 6. If precoded mappings are not found, then dynamic precoding has to take place while proceeding to the next instruction normally or during jumps,
    ```
    macro NEXT(cpu_state, current_instr):
