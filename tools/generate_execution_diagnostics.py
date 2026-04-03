@@ -6,13 +6,21 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from py65.devices.mpu6502 import MPU
 
 CONTEXT = 20
-EMULATION_MODES = ("FETCH_DECODE_EXECUTE", "DIRECT_THREADED")
+EMULATION_MODES = ("FETCH_DECODE_EXECUTE", "DIRECT_THREADED", "BLOCK")
 LOGGER = logging.getLogger("diagnostics")
+
+ANSI_RESET = "\033[0m"
+ANSI_DIM = "\033[2m"
+ANSI_CYAN = "\033[36m"
+ANSI_YELLOW = "\033[33m"
+ANSI_RED = "\033[31m"
+ANSI_BOLD_RED = "\033[1;31m"
 
 IMPLIED = "Implied"
 ACCUMULATOR = "Accumulator"
@@ -27,6 +35,51 @@ INDIRECT = "Indirect"
 INDEXED_INDIRECT = "(Indirect,X)"
 INDIRECT_INDEXED = "(Indirect),Y"
 RELATIVE = "Relative"
+
+
+class ColorLogFormatter(logging.Formatter):
+    LEVEL_COLORS = {
+        logging.DEBUG: ANSI_CYAN,
+        logging.INFO: ANSI_CYAN,
+        logging.WARNING: ANSI_YELLOW,
+        logging.ERROR: ANSI_RED,
+        logging.CRITICAL: ANSI_BOLD_RED,
+    }
+
+    def __init__(self, use_color):
+        super().__init__(datefmt="%Y-%m-%d %H:%M:%S")
+        self.use_color = use_color
+
+    def format(self, record):
+        timestamp = f"{self.formatTime(record)},{int(record.msecs):03d}"
+        level_name = record.levelname
+        message = record.getMessage()
+
+        if self.use_color:
+            level_color = self.LEVEL_COLORS.get(record.levelno, ANSI_CYAN)
+            prefix = (
+                f"{ANSI_DIM}{timestamp}{ANSI_RESET} "
+                f"{ANSI_DIM}|{ANSI_RESET} "
+                f"{level_color}{level_name}{ANSI_RESET} "
+                f"{ANSI_DIM}|{ANSI_RESET}"
+            )
+        else:
+            prefix = f"{timestamp} | {level_name} |"
+
+        formatted = f"{prefix} {message}"
+        if record.exc_info:
+            formatted = f"{formatted}\n{self.formatException(record.exc_info)}"
+        return formatted
+
+
+def configure_logging(log_level):
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(ColorLogFormatter(use_color=sys.stderr.isatty()))
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(log_level)
+    root_logger.addHandler(handler)
 
 
 OPCODE_TABLE = {
@@ -267,10 +320,25 @@ def load_program_image(path):
     with open(path, "rb") as f:
         return f.read()
 
-def run_local_implementation(binary_path, emulation_mode):
-    LOGGER.info("Starting local run for mode=%s", emulation_mode)
+
+def build_performance_report(elapsed_seconds, instruction_count=None):
+    instructions_per_second = None
+    if elapsed_seconds > 0:
+        if instruction_count is not None:
+            instructions_per_second = instruction_count / elapsed_seconds
+
+    return {
+        "elapsed_seconds": elapsed_seconds,
+        "elapsed_milliseconds": elapsed_seconds * 1000,
+        "instruction_count": instruction_count,
+        "instructions_per_second": instructions_per_second,
+    }
+
+def run_local_implementation(binary_path, emulation_mode, instruction_count=None):
+    LOGGER.info("Starting local run for binary=%s mode=%s", binary_path, emulation_mode)
     env = dict(os.environ)
     env["EMULATION_MODE"] = emulation_mode
+    start = time.perf_counter()
     completed = subprocess.run(
         [str(binary_path)],
         check=False,
@@ -278,26 +346,37 @@ def run_local_implementation(binary_path, emulation_mode):
         text=True,
         env=env,
     )
+    elapsed_seconds = time.perf_counter() - start
     if completed.returncode != 0:
         LOGGER.error(
-            "Local run failed for mode=%s (exit_code=%d)",
+            "Local run failed for binary=%s mode=%s (exit_code=%d, elapsed_ms=%.3f)",
+            binary_path,
             emulation_mode,
             completed.returncode,
+            elapsed_seconds * 1000,
         )
         raise RuntimeError(
             "Local implementation failed "
             f"(mode={emulation_mode}, exit_code={completed.returncode}):\n{completed.stderr.strip()}"
         )
-    LOGGER.info(
-        "Completed local run for mode=%s (trace_lines=%d)",
-        emulation_mode,
-        len(completed.stdout.splitlines()),
+    trace_lines = completed.stdout.splitlines(keepends=True)
+    performance = build_performance_report(
+        elapsed_seconds,
+        instruction_count=instruction_count,
     )
-    return completed.stdout.splitlines(keepends=True)
+    LOGGER.info(
+        "Completed local run for binary=%s mode=%s (trace_lines=%d, elapsed_ms=%.3f)",
+        binary_path,
+        emulation_mode,
+        len(trace_lines),
+        performance["elapsed_milliseconds"],
+    )
+    return trace_lines, performance
 
 
 def generate_py65_reference_trace(program_path):
     LOGGER.info("Generating py65 reference trace from program=%s", program_path)
+    start = time.perf_counter()
     mpu = MPU()
 
     with open(program_path, "rb") as f:
@@ -324,8 +403,58 @@ def generate_py65_reference_trace(program_path):
 
         mpu.step()
 
-    LOGGER.info("Completed py65 reference generation (trace_lines=%d)", len(lines))
-    return lines
+    elapsed_seconds = time.perf_counter() - start
+    performance = build_performance_report(
+        elapsed_seconds,
+        instruction_count=len(lines),
+    )
+    LOGGER.info(
+        "Completed py65 reference generation (trace_lines=%d, elapsed_ms=%.3f)",
+        len(lines),
+        performance["elapsed_milliseconds"],
+    )
+    return lines, performance
+
+
+def benchmark_py65_reference(program_path):
+    LOGGER.info("Benchmarking py65 reference without trace from program=%s", program_path)
+    start = time.perf_counter()
+    mpu = MPU()
+
+    with open(program_path, "rb") as f:
+        data = f.read()
+
+    for i, byte in enumerate(data):
+        mpu.memory[i] = byte
+
+    mpu.pc = 0x0400
+    instruction_count = 0
+
+    while True:
+        pc = mpu.pc
+        opcode = mpu.memory[pc]
+        instruction_count += 1
+
+        if opcode == 0x4C:
+            lo = mpu.memory[pc + 1]
+            hi = mpu.memory[pc + 2]
+            target = (hi << 8) | lo
+            if target == pc:
+                break
+
+        mpu.step()
+
+    elapsed_seconds = time.perf_counter() - start
+    performance = build_performance_report(
+        elapsed_seconds,
+        instruction_count=instruction_count,
+    )
+    LOGGER.info(
+        "Completed py65 reference benchmark without trace (instructions=%d, elapsed_ms=%.3f)",
+        instruction_count,
+        performance["elapsed_milliseconds"],
+    )
+    return performance
 
 
 def compare_execution_traces(local_trace_lines, reference_trace_lines, program_path):
@@ -385,6 +514,7 @@ def compare_execution_traces(local_trace_lines, reference_trace_lines, program_p
     LOGGER.info("Comparison complete: DIVERGENCE_DETECTED at line=%d", divergence + 1)
     return result
 
+
 if __name__ == "__main__":
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
@@ -396,7 +526,13 @@ if __name__ == "__main__":
         "--binary",
         type=Path,
         default=project_root / "cmake-build-debug" / "mos6502",
-        help="Path to local mos6502 binary.",
+        help="Path to traced mos6502 binary.",
+    )
+    parser.add_argument(
+        "--binary-untraced",
+        type=Path,
+        default=project_root / "cmake-build-debug" / "mos6502_no_trace",
+        help="Path to untraced mos6502 binary.",
     )
     parser.add_argument(
         "--program",
@@ -418,30 +554,38 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        stream=sys.stderr,
-        force=True,
-    )
+    configure_logging(getattr(logging, args.log_level))
 
     LOGGER.info("Diagnostics start")
-    LOGGER.info("Binary path: %s", args.binary.resolve())
+    LOGGER.info("Traced binary path: %s", args.binary.resolve())
+    LOGGER.info("Untraced binary path: %s", args.binary_untraced.resolve())
     LOGGER.info("Program path: %s", args.program.resolve())
     LOGGER.info("Report path: %s", args.report.resolve())
 
-    reference_trace_lines = generate_py65_reference_trace(args.program.resolve())
+    reference_trace_lines, _ = generate_py65_reference_trace(args.program.resolve())
+    reference_performance = benchmark_py65_reference(args.program.resolve())
 
     mode_reports = {}
+    instruction_count = len(reference_trace_lines)
     for mode in EMULATION_MODES:
         LOGGER.info("Processing mode=%s", mode)
         try:
-            local_trace_lines = run_local_implementation(args.binary.resolve(), mode)
+            local_trace_lines, _ = run_local_implementation(
+                args.binary.resolve(),
+                mode,
+                instruction_count=instruction_count,
+            )
+            _, local_performance = run_local_implementation(
+                args.binary_untraced.resolve(),
+                mode,
+                instruction_count=instruction_count,
+            )
             comparison = compare_execution_traces(local_trace_lines, reference_trace_lines, args.program.resolve())
             mode_reports[mode] = {
                 "status": comparison.get("status", "UNKNOWN"),
                 "local_trace_line_count": len(local_trace_lines),
                 "reference_trace_line_count": len(reference_trace_lines),
+                "performance": local_performance,
                 "comparison": comparison,
             }
         except Exception as exc:
@@ -450,6 +594,7 @@ if __name__ == "__main__":
                 "status": "EXECUTION_FAILED",
                 "local_trace_line_count": 0,
                 "reference_trace_line_count": len(reference_trace_lines),
+                "performance": None,
                 "error": str(exc),
             }
 
@@ -462,6 +607,7 @@ if __name__ == "__main__":
         "status": "ALL_MODES_IDENTICAL" if all_modes_match_reference else "MODE_DIVERGENCE_DETECTED",
         "emulation_modes_checked": list(EMULATION_MODES),
         "all_modes_match_reference": all_modes_match_reference,
+        "reference_performance": reference_performance,
         "results_by_mode": mode_reports,
     }
 

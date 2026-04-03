@@ -3,7 +3,7 @@
 //
 
 #include <stdint.h>
-#include "mos6502/interpreter_engine.h"
+#include "mos6502/engines/linear.h"
 
 #include <stdbool.h>
 #include "mos6502/cpu.h"

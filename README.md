@@ -21,6 +21,12 @@ Run with explicit mode:
 ./cmake-build-debug/mos6502 --mode DIRECT_THREADED
 ```
 
+Run without instruction tracing for performance benchmarking:
+
+```bash
+./cmake-build-debug/mos6502_no_trace --mode DIRECT_THREADED
+```
+
 Run with a custom program binary:
 
 ```bash
@@ -32,3 +38,5 @@ Generate diagnostic report for both modes:
 ```bash
 python3 tools/generate_execution_diagnostics.py
 ```
+
+The diagnostics report includes both traced correctness checks and untraced benchmark timings.

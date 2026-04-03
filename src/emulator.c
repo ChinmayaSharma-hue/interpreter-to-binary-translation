@@ -3,13 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "app/emulator.h"
+#include "emulator.h"
 #include "mos6502/cpu.h"
-
-typedef enum {
-    EMULATION_MODE_FETCH_DECODE_EXECUTE = 0,
-    EMULATION_MODE_DIRECT_THREADED
-} emulation_mode_t;
 
 typedef struct {
     const char *program_path;
@@ -42,6 +37,11 @@ static bool parse_emulation_mode(const char *value, emulation_mode_t *mode, bool
 
     if (strcmp(value, "DIRECT_THREADED") == 0) {
         *mode = EMULATION_MODE_DIRECT_THREADED;
+        return true;
+    }
+
+    if (strcmp(value, "BLOCK") == 0) {
+        *mode = EMULATION_MODE_BLOCK;
         return true;
     }
 
@@ -109,39 +109,65 @@ static int resolve_emulation_mode(const config_t *config, emulation_mode_t *mode
     return EXIT_SUCCESS;
 }
 
-static int initialize_cpu(chip_t *chip, const char *program_path) {
-    cpu_init(chip);
+static int initialize_cpu(emulator_t *emulator, const char *program_path) {
+    cpu_init(emulator);
 
-    if (load_program(chip, program_path) != 0) {
+    if (load_program(emulator, program_path) != 0) {
         fprintf(stderr, "ERROR: Failed to load program: %s\n", program_path);
         return EXIT_FAILURE;
     }
 
-    cpu_reset(chip);
+    cpu_reset(emulator);
     return EXIT_SUCCESS;
 }
 
-static int run_emulation(chip_t *chip, emulation_mode_t mode) {
-    if (mode == EMULATION_MODE_FETCH_DECODE_EXECUTE) {
-        while (true) {
-            cpu_step_interpreter(chip);
+static int initialize_emulator(emulator_t *emulator, const emulation_mode_t mode) {
+    memset(emulator, 0, sizeof(*emulator));
+
+    switch (mode) {
+        case EMULATION_MODE_FETCH_DECODE_EXECUTE:
+            emulator->emulation_mode = EMULATION_MODE_FETCH_DECODE_EXECUTE;
+            return EXIT_SUCCESS;
+
+        case EMULATION_MODE_DIRECT_THREADED: {
+            emulator->emulation_mode = EMULATION_MODE_DIRECT_THREADED;
+            emulator->engine.threaded.cache_length = 0;
+            memset(emulator->engine.threaded.directory.instruction_owner, UINT16_MAX, sizeof(emulator->engine.threaded.directory.instruction_owner));
+            memset(emulator->engine.threaded.directory.spc_to_tpc, UINT16_MAX, sizeof(emulator->engine.threaded.directory.spc_to_tpc));
+            return EXIT_SUCCESS;
         }
-    }
+        case EMULATION_MODE_BLOCK: {
+            emulator->emulation_mode = EMULATION_MODE_BLOCK;
+            emulator->engine.block.arena_head = 0;
+            emulator->engine.block.program_counter = 0;
+            emulator->engine.block.cache_length = 0;
+            memset(emulator->engine.block.directory.instruction_owner, UINT16_MAX, sizeof(emulator->engine.block.directory.instruction_owner));
+            memset(emulator->engine.block.directory.spc_to_tpc, UINT16_MAX, sizeof(emulator->engine.block.directory.spc_to_tpc));
+            return EXIT_SUCCESS;
+        }
 
-    if (mode == EMULATION_MODE_DIRECT_THREADED) {
-        cpu_run_threaded(chip);
-        return EXIT_SUCCESS;
+        default:
+            fprintf(stderr,
+                    "ERROR: Unsupported mode selected (%d). Allowed values: FETCH_DECODE_EXECUTE, DIRECT_THREADED\n",
+                    mode);
+            return EXIT_FAILURE;
     }
+}
 
-    fprintf(stderr,
+static int run_emulation(emulator_t *emulator) {
+    if (cpu_run(emulator) != EXIT_SUCCESS) {
+        fprintf(stderr,
             "ERROR: Unsupported mode selected (%d). Allowed values: FETCH_DECODE_EXECUTE, DIRECT_THREADED\n",
-            mode);
-    return EXIT_FAILURE;
+            emulator->emulation_mode);
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
 }
 
 int run(int argc, char **argv) {
     config_t config;
-    chip_t chip;
+    emulator_t emulator;
     emulation_mode_t mode;
 
     init_default_config(&config);
@@ -151,13 +177,17 @@ int run(int argc, char **argv) {
         return parse_result;
     }
 
-    if (initialize_cpu(&chip, config.program_path) != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
-
     if (resolve_emulation_mode(&config, &mode) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
 
-    return run_emulation(&chip, mode);
+    if (initialize_emulator(&emulator, mode) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    if (initialize_cpu(&emulator, config.program_path) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    return run_emulation(&emulator);
 }

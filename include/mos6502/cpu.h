@@ -4,18 +4,28 @@
 
 #ifndef MOS6502_CPU_H
 #define MOS6502_CPU_H
+
+#include "emulator.h"
 #include "mos6502/types.h"
-#include "mos6502/threaded_engine.h"
 
 #define MEMORY_SIZE 65536
 #define ENTRY_POINT 0x0000
 
-void cpu_init(chip_t *chip);
-void cpu_reset(chip_t* chip);
-void cpu_step_interpreter(chip_t* chip);
-size_t cpu_translate(chip_t* chip, const decode_entry_t *dispatch);
-void cpu_run_threaded(chip_t *chip);
-int load_program(chip_t* chip, const char* program_path);
+typedef struct emulator_t emulator_t;
 
+typedef enum {
+    PRECODE_OK,
+    PRECODE_INVALID_OPCODE,
+    PRECODE_OUT_OF_BOUNDS
+} precode_result_t;
+
+void cpu_init(emulator_t *emulator);
+void cpu_reset(emulator_t *emulator);
+size_t precode_batch(
+    const decode_entry_t *dispatch,
+    emulator_t *emulator
+);
+int cpu_run(emulator_t *emulator);
+int load_program(emulator_t *emulator, const char* program_path);
 
 #endif //MOS6502_CPU_H
