@@ -52,8 +52,8 @@ typedef struct {
 
 #define BLOCK_NEXT(chip, instruction)                                                  \
     do {                                                                               \
-        BLOCK_ENGINE_STATE(emulator)->program_counter += 1;                            \
         (chip)->program_counter += (instruction).spc_byte_offset;                      \
+        BLOCK_ENGINE_STATE(emulator)->program_counter += 1;                            \
         if (BLOCK_ENGINE_STATE(emulator)->program_counter >=                           \
             BLOCK_ENGINE_STATE(emulator)->current_block->block_length) {               \
             goto BLOCK_DONE;                                                           \
