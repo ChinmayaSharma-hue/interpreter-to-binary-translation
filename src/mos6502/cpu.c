@@ -10,6 +10,8 @@
 #include "mos6502/engines/linear.h"
 #include "mos6502/engines/ops.h"
 
+bool mos6502_trace_enabled = false;
+
 int load_program(emulator_t *emulator, const char* program_path) {
     chip_t *chip = &emulator->chip;
     FILE *fptr = fopen(program_path, "rb");
@@ -31,6 +33,7 @@ int load_program(emulator_t *emulator, const char* program_path) {
 
 void cpu_init(emulator_t *emulator) {
     memset(&emulator->chip, 0, sizeof(emulator->chip));
+    emulator->chip.memory = (uint8_t *)malloc(MEMORY_SIZE * sizeof(uint8_t));
 }
 
 void cpu_reset(emulator_t *emulator) {
@@ -127,7 +130,7 @@ static int reprecode_instruction(const decode_entry_t *dispatch, emulator_t *emu
 
     // precoding and caching the instruction
     precoded_instruction_t instruction = {};
-    precode_result_t precode_result = precode_instruction(chip, dispatch, spc, &instruction);
+    const precode_result_t precode_result = precode_instruction(chip, dispatch, spc, &instruction);
     switch (precode_result) {
         case PRECODE_OK: {
             cache_instruction(instruction, emulator, spc, tpc);
@@ -173,6 +176,9 @@ static inline void block_code_write(const decode_entry_t *dispatch, emulator_t *
 
     REPORT_SELF_MODIFYING_CODE(&chip, address);
 
+    const uint16_t tpc = engine_state->directory.spc_to_tpc[owner_spc];
+    if (tpc == UINT16_MAX) return;
+    engine_state->code_cache[tpc].valid = false;
     invalidate_translation_entry(&engine_state->directory, owner_spc);
     invalidate_instruction_ownership(&engine_state->directory, owner_spc);
 }
@@ -190,7 +196,7 @@ size_t precode_batch(const decode_entry_t *dispatch, emulator_t* emulator) {
     threaded_engine_state_t *engine_state = THREADED_ENGINE_STATE(emulator);
     while (true) {
         precoded_instruction_t instruction = {};
-        precode_result_t precode_result = precode_instruction(chip, dispatch, spc, &instruction);
+        const precode_result_t precode_result = precode_instruction(chip, dispatch, spc, &instruction);
         switch (precode_result) {
             case PRECODE_OK: {
                 cache_instruction(instruction, emulator, spc, (uint16_t)engine_state->cache_length);
@@ -209,7 +215,7 @@ done:
     return engine_state->cache_length;
 }
 
-void precode_block(const decode_entry_t *dispatch, emulator_t* emulator) {
+translation_block_t* precode_block(const decode_entry_t *dispatch, emulator_t* emulator) {
     const chip_t *chip = &emulator->chip;
     uint16_t spc = chip->program_counter;
     block_engine_state_t* engine_state = BLOCK_ENGINE_STATE(emulator);
@@ -222,26 +228,32 @@ void precode_block(const decode_entry_t *dispatch, emulator_t* emulator) {
         engine_state->arena_head = 0;
     }
 
-    translation_block_t translation_block = {
-        .instructions = &engine_state->instruction_arena[engine_state->arena_head],
-        .block_length = 0
-    };
+    translation_block_t *translation_block = &engine_state->code_cache[(uint16_t)engine_state->cache_length];
+    translation_block->instructions = &engine_state->instruction_arena[engine_state->arena_head];
+    translation_block->block_length = 0;
     while (true) {
         // block termination
         if (is_block_terminator(chip, spc)) {
+            if (translation_block->block_length > 0) {
+                const precoded_instruction_t instruction = {
+                    .handler = dispatch[0xFF].handler,
+                    .spc_byte_offset = 0
+                };
+                engine_state->instruction_arena[engine_state->arena_head++] = instruction;
+            }
             break;
         }
 
         // block construction
         precoded_instruction_t instruction = {};
-        precode_result_t precode_result = precode_instruction(chip, dispatch, spc, &instruction);
+        const precode_result_t precode_result = precode_instruction(chip, dispatch, spc, &instruction);
         switch (precode_result) {
             case PRECODE_OK: {
                 engine_state->instruction_arena[engine_state->arena_head++] = instruction;
                 for (int i=0; i<instruction.spc_byte_offset; i++) {
                     engine_state->directory.instruction_owner[spc++] = chip->program_counter;
                 }
-                translation_block.block_length += 1;
+                translation_block->block_length += 1;
                 break;
             }
             case PRECODE_INVALID_OPCODE:
@@ -252,11 +264,13 @@ void precode_block(const decode_entry_t *dispatch, emulator_t* emulator) {
 
 done:
     // add block to the cache
-    if (translation_block.block_length > 0) {
-        engine_state->code_cache[(uint16_t)engine_state->cache_length] = translation_block;
+    if (translation_block->block_length > 0) {
+        translation_block->valid = true;
         engine_state->directory.spc_to_tpc[chip->program_counter] = (uint16_t)engine_state->cache_length;
         engine_state->cache_length += 1;
+        return translation_block;
     }
+    return NULL;
 }
 
 static step_termination_type_t cpu_step_linear(chip_t* chip) {
@@ -278,15 +292,6 @@ static step_termination_type_t cpu_step_linear(chip_t* chip) {
     }
 
     execute_opcode(opcode, chip);
-    if (chip->program_counter == 0x362A &&
-        chip->accumulator == 0x3E &&
-        chip->index_x_register == 0x0E &&
-        chip->index_y_register == 0xFF &&
-        chip->stack_pointer == 0xFB &&
-        chip->status_register == 0xB0 &&
-        opcode == 0xD0) {
-        return LINEAR_EXIT;
-    }
     return LINEAR_CONTINUE;
 }
 
@@ -300,7 +305,7 @@ int cpu_run(emulator_t *emulator) {
                 - the spc is incremented based on spc_byte_offset, mapped to tpc, get the threaded instruction for the tpc, goto the handler
         for block, this function is supposed to,
             1. if there is no entry in the translation map for the current SPC, then call precode_block for the current SPC
-            2. if there is an entry in the translation map for the current SPC, then execute that block till control jumps back to BLOCK_DONE
+            2. if there is an entry in the translation map for the current SPC, then execute that block till control jumps back to DISPATCHER
             3. once the block is done, find out if the current instruction is one of the jump instructions, execute it if it is, then do the same as before
     */
     __label__ OP_LDA, OP_LDX, OP_LDY, OP_STA, OP_STX, OP_STY, OP_ADC, OP_SBC, OP_AND, OP_ORA, OP_EOR,
@@ -309,9 +314,9 @@ int cpu_run(emulator_t *emulator) {
               OP_DEX, OP_DEY, OP_BCC, OP_BCS, OP_BEQ, OP_BNE, OP_BMI, OP_BPL, OP_BVC, OP_BVS, OP_JMP,
               OP_JSR, OP_RTS, OP_RTI, OP_CLC, OP_CLD, OP_CLI, OP_CLV, OP_SEC, OP_SED, OP_SEI, OP_TAX,
               OP_TAY, OP_TXA, OP_TYA, OP_TSX, OP_TXS, OP_PHA, OP_PHP, OP_PLA, OP_PLP, OP_BRK, OP_NOP,
-              BLOCK_DONE;
+              DISPATCHER, EXECUTION_COMPLETE;
     chip_t *chip = &emulator->chip;
-    precoded_instruction_t instruction = {};
+    precoded_instruction_t* instruction = {};
     static const decode_entry_t dispatch[256] = {
         DECODE_TABLE_CONTENT
     };
@@ -332,9 +337,9 @@ int cpu_run(emulator_t *emulator) {
             }
 
             // execute the threaded instruction
-            instruction = engine_state->code_cache[engine_state->directory.spc_to_tpc[chip->program_counter]];
+            instruction = &engine_state->code_cache[engine_state->directory.spc_to_tpc[chip->program_counter]];
             TRACE_CPU_STATE(chip);
-            goto *instruction.handler;
+            goto *instruction->handler;
             break;
         }
         case EMULATION_MODE_FETCH_DECODE_EXECUTE: {
@@ -343,8 +348,7 @@ int cpu_run(emulator_t *emulator) {
         }
         case EMULATION_MODE_BLOCK: {
             block_engine_state_t *engine_state = BLOCK_ENGINE_STATE(emulator);
-BLOCK_DONE:
-            engine_state->program_counter = 0;
+DISPATCHER:
             // execute all the block terminator instructions
             while (is_block_terminator(chip, chip->program_counter)) {
                 step_termination_type_t termination_type = cpu_step_linear(chip);
@@ -354,19 +358,19 @@ BLOCK_DONE:
             }
 
             // precode the block if no translation block exists
-            if (engine_state->directory.spc_to_tpc[chip->program_counter] == UINT16_MAX) {
-                precode_block(dispatch, emulator);
-            }
-            uint16_t block_length = engine_state->code_cache[engine_state->directory.spc_to_tpc[chip->program_counter]].block_length;
+            uint16_t tpc = engine_state->directory.spc_to_tpc[chip->program_counter];
+            translation_block_t* block = (tpc != UINT16_MAX)
+                ? &engine_state->code_cache[tpc]
+                : precode_block(dispatch, emulator);
 
             // go to the block execution starting point
-            if (block_length > 0) {
-                engine_state->current_block = &engine_state->code_cache[engine_state->directory.spc_to_tpc[chip->program_counter]];
-                instruction = *engine_state->current_block->instructions;
+            if (block && block->valid) {
+                // jumping to the next block
+                instruction = block->instructions;
                 TRACE_CPU_STATE(chip);
-                goto *engine_state->current_block->instructions->handler;
+                goto *instruction->handler;
             }
-            goto BLOCK_DONE;
+            goto DISPATCHER;
         }
         default:
             return EXIT_FAILURE;
@@ -496,4 +500,7 @@ OP_BRK:
     OP_BRK(chip, instruction);
 OP_NOP:
     ENGINE_NEXT(chip, instruction);
+
+EXECUTION_COMPLETE:
+    return EXIT_SUCCESS;
 }

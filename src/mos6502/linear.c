@@ -505,7 +505,7 @@ static void op_ora_ind_y(chip_t *chip) {
 static inline void adc(chip_t* chip, const uint8_t value) {
     const uint8_t accumulator = chip->accumulator;
     const uint8_t carry = chip->status_register & 0x01;
-    uint16_t sum = accumulator + value + carry;
+    const uint16_t sum = accumulator + value + carry;
     uint8_t zn_result;
     uint8_t overflow_source;
     if (chip->status_register & 0x08) {

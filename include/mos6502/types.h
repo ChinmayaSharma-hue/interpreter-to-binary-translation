@@ -40,7 +40,7 @@ typedef struct {
     uint8_t status_register;
     uint8_t stack_pointer;
     uint16_t program_counter;
-    uint8_t memory[65536];
+    uint8_t *memory;
 } chip_t;
 
 typedef struct {

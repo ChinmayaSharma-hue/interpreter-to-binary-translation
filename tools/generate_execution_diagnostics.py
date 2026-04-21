@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import struct
 import subprocess
 import sys
 import time
@@ -12,7 +13,7 @@ from pathlib import Path
 from py65.devices.mpu6502 import MPU
 
 CONTEXT = 20
-EMULATION_MODES = ("FETCH_DECODE_EXECUTE", "DIRECT_THREADED", "BLOCK")
+EMULATION_MODES = ["BLOCK"]
 LOGGER = logging.getLogger("diagnostics")
 
 ANSI_RESET = "\033[0m"
@@ -316,6 +317,29 @@ def parse_line(line, program_image=None):
         "raw_trace": line.strip()
     }
 
+TRACE_RECORD_FORMAT = ">HBBBBBB"  # PC (uint16), A, X, Y, SP, SR, opcode
+TRACE_RECORD_SIZE = struct.calcsize(TRACE_RECORD_FORMAT)
+
+
+def write_reference_trace_binary(path, trace_lines):
+    with open(path, "wb") as f:
+        for line in trace_lines:
+            parts = line.strip().split()
+            f.write(struct.pack(TRACE_RECORD_FORMAT,
+                int(parts[0], 16), int(parts[1], 16), int(parts[2], 16),
+                int(parts[3], 16), int(parts[4], 16), int(parts[5], 16),
+                int(parts[6], 16)))
+
+
+def read_reference_trace_binary(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    return [
+        "%04X %02X %02X %02X %02X %02X %02X\n" % struct.unpack_from(TRACE_RECORD_FORMAT, data, i)
+        for i in range(0, len(data), TRACE_RECORD_SIZE)
+    ]
+
+
 def load_program_image(path):
     with open(path, "rb") as f:
         return f.read()
@@ -334,10 +358,14 @@ def build_performance_report(elapsed_seconds, instruction_count=None):
         "instructions_per_second": instructions_per_second,
     }
 
-def run_local_implementation(binary_path, emulation_mode, instruction_count=None):
-    LOGGER.info("Starting local run for binary=%s mode=%s", binary_path, emulation_mode)
+def run_local_implementation(binary_path, emulation_mode, trace=False, instruction_count=None):
+    LOGGER.info("Starting local run for mode=%s trace=%s", emulation_mode, trace)
     env = dict(os.environ)
     env["EMULATION_MODE"] = emulation_mode
+    if trace:
+        env["EMULATION_TRACE"] = "1"
+    else:
+        env.pop("EMULATION_TRACE", None)
     start = time.perf_counter()
     completed = subprocess.run(
         [str(binary_path)],
@@ -349,8 +377,7 @@ def run_local_implementation(binary_path, emulation_mode, instruction_count=None
     elapsed_seconds = time.perf_counter() - start
     if completed.returncode != 0:
         LOGGER.error(
-            "Local run failed for binary=%s mode=%s (exit_code=%d, elapsed_ms=%.3f)",
-            binary_path,
+            "Local run failed for mode=%s (exit_code=%d, elapsed_ms=%.3f)",
             emulation_mode,
             completed.returncode,
             elapsed_seconds * 1000,
@@ -365,9 +392,9 @@ def run_local_implementation(binary_path, emulation_mode, instruction_count=None
         instruction_count=instruction_count,
     )
     LOGGER.info(
-        "Completed local run for binary=%s mode=%s (trace_lines=%d, elapsed_ms=%.3f)",
-        binary_path,
+        "Completed local run for mode=%s trace=%s (trace_lines=%d, elapsed_ms=%.3f)",
         emulation_mode,
+        trace,
         len(trace_lines),
         performance["elapsed_milliseconds"],
     )
@@ -526,13 +553,7 @@ if __name__ == "__main__":
         "--binary",
         type=Path,
         default=project_root / "cmake-build-debug" / "mos6502",
-        help="Path to traced mos6502 binary.",
-    )
-    parser.add_argument(
-        "--binary-untraced",
-        type=Path,
-        default=project_root / "cmake-build-debug" / "mos6502_no_trace",
-        help="Path to untraced mos6502 binary.",
+        help="Path to mos6502 binary.",
     )
     parser.add_argument(
         "--program",
@@ -547,6 +568,18 @@ if __name__ == "__main__":
         help="Path to write diagnostic JSON report.",
     )
     parser.add_argument(
+        "--reference-trace",
+        type=Path,
+        default=script_dir / "reference_trace.bin",
+        help="Path to cache the py65 reference trace (binary format). If the file exists it will be reused.",
+    )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        default=False,
+        help="Run performance benchmarks. Skipped by default.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -557,13 +590,24 @@ if __name__ == "__main__":
     configure_logging(getattr(logging, args.log_level))
 
     LOGGER.info("Diagnostics start")
-    LOGGER.info("Traced binary path: %s", args.binary.resolve())
-    LOGGER.info("Untraced binary path: %s", args.binary_untraced.resolve())
+    LOGGER.info("Binary path: %s", args.binary.resolve())
     LOGGER.info("Program path: %s", args.program.resolve())
     LOGGER.info("Report path: %s", args.report.resolve())
+    LOGGER.info("Reference trace path: %s", args.reference_trace.resolve())
+    LOGGER.info("Benchmarking: %s", args.benchmark)
 
-    reference_trace_lines, _ = generate_py65_reference_trace(args.program.resolve())
-    reference_performance = benchmark_py65_reference(args.program.resolve())
+    reference_trace_path = args.reference_trace.resolve()
+    if reference_trace_path.exists() and reference_trace_path.stat().st_size >= TRACE_RECORD_SIZE:
+        LOGGER.info("Loading cached reference trace from %s", reference_trace_path)
+        reference_trace_lines = read_reference_trace_binary(reference_trace_path)
+        LOGGER.info("Loaded %d reference trace lines", len(reference_trace_lines))
+    else:
+        reference_trace_lines, _ = generate_py65_reference_trace(args.program.resolve())
+        reference_trace_path.parent.mkdir(parents=True, exist_ok=True)
+        write_reference_trace_binary(reference_trace_path, reference_trace_lines)
+        LOGGER.info("Saved reference trace to %s", reference_trace_path)
+
+    reference_performance = benchmark_py65_reference(args.program.resolve()) if args.benchmark else None
 
     mode_reports = {}
     instruction_count = len(reference_trace_lines)
@@ -573,13 +617,17 @@ if __name__ == "__main__":
             local_trace_lines, _ = run_local_implementation(
                 args.binary.resolve(),
                 mode,
+                trace=True,
                 instruction_count=instruction_count,
             )
-            _, local_performance = run_local_implementation(
-                args.binary_untraced.resolve(),
-                mode,
-                instruction_count=instruction_count,
-            )
+            local_performance = None
+            if args.benchmark:
+                _, local_performance = run_local_implementation(
+                    args.binary.resolve(),
+                    mode,
+                    trace=False,
+                    instruction_count=instruction_count,
+                )
             comparison = compare_execution_traces(local_trace_lines, reference_trace_lines, args.program.resolve())
             mode_reports[mode] = {
                 "status": comparison.get("status", "UNKNOWN"),

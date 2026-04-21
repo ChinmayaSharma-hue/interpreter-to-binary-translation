@@ -19,7 +19,7 @@
                 BLOCK_REPORT_INSTRUCTION_DOES_NOT_EXIST(chip);                              \
                 break;                                                                      \
             default:                                                                        \
-                exit(0);                                                                    \
+                exit(1);                                                                    \
         }                                                                                   \
     } while (0)
 
@@ -49,19 +49,19 @@
     } while (0)
 #endif
 
-#define EA_ABS(chip, instruction) ((uint16_t)((instruction).operand))
-#define EA_ABS_X(chip, instruction) ((uint16_t)((instruction).operand + (chip)->index_x_register))
-#define EA_ABS_Y(chip, instruction) ((uint16_t)((instruction).operand + (chip)->index_y_register))
-#define EA_ZP(chip, instruction) ((uint16_t)((uint8_t)((instruction).operand)))
-#define EA_ZP_X(chip, instruction) ((uint16_t)((uint8_t)((instruction).operand + (chip)->index_x_register)))
-#define EA_ZP_Y(chip, instruction) ((uint16_t)((uint8_t)((instruction).operand + (chip)->index_y_register)))
+#define EA_ABS(chip, instruction) ((uint16_t)((instruction)->operand))
+#define EA_ABS_X(chip, instruction) ((uint16_t)((instruction)->operand + (chip)->index_x_register))
+#define EA_ABS_Y(chip, instruction) ((uint16_t)((instruction)->operand + (chip)->index_y_register))
+#define EA_ZP(chip, instruction) ((uint16_t)((uint8_t)((instruction)->operand)))
+#define EA_ZP_X(chip, instruction) ((uint16_t)((uint8_t)((instruction)->operand + (chip)->index_x_register)))
+#define EA_ZP_Y(chip, instruction) ((uint16_t)((uint8_t)((instruction)->operand + (chip)->index_y_register)))
 #define EA_IND_X(chip, instruction) \
-    ((uint16_t)((chip)->memory[(uint8_t)((instruction).operand + (chip)->index_x_register)] | \
-    ((chip)->memory[(uint8_t)((uint8_t)((instruction).operand + (chip)->index_x_register) + 1)] << 8)))
+    ((uint16_t)((chip)->memory[(uint8_t)((instruction)->operand + (chip)->index_x_register)] | \
+    ((chip)->memory[(uint8_t)((uint8_t)((instruction)->operand + (chip)->index_x_register) + 1)] << 8)))
 #define EA_IND_Y(chip, instruction) \
-    ((uint16_t)(((chip)->memory[(uint8_t)((instruction).operand)] | \
-    ((chip)->memory[(uint8_t)((uint8_t)((instruction).operand) + 1)] << 8)) + (chip)->index_y_register))
-#define VALUE_IMM(instruction) ((uint8_t)((instruction).operand))
+    ((uint16_t)(((chip)->memory[(uint8_t)((instruction)->operand)] | \
+    ((chip)->memory[(uint8_t)((uint8_t)((instruction)->operand) + 1)] << 8)) + (chip)->index_y_register))
+#define VALUE_IMM(instruction) ((uint8_t)((instruction)->operand))
 
 #define SET_ZERO_AND_NEGATIVE_FLAGS(chip, value)           \
     do {                                                   \
@@ -122,7 +122,7 @@
                 BLOCK_NEXT((chip), (instruction));                                              \
                 break;                                                                          \
             default:                                                                            \
-                exit(0);                                                                        \
+                exit(1);                                                                        \
         }                                                                                       \
     } while (0)
 
@@ -136,7 +136,7 @@
                 BLOCK_JUMP((chip), (instruction), (address));                                   \
                 break;                                                                          \
             default:                                                                            \
-                exit(0);                                                                        \
+                exit(1);                                                                        \
         }                                                                                       \
     } while (0)
 
@@ -167,7 +167,7 @@
 
 #define OP_LOAD_REG(chip, instruction, reg)                              \
     do {                                                                 \
-        switch ((instruction).mode) {                                    \
+        switch ((instruction)->mode) {                                    \
             case AM_IMM:                                                 \
                 (reg) = VALUE_IMM(instruction);                          \
                 break;                                                   \
@@ -205,7 +205,7 @@
 #define OP_STORE_REG(chip, instruction, reg)                             \
     do {                                                                 \
         uint16_t address;                                                \
-        switch ((instruction).mode) {                                    \
+        switch ((instruction)->mode) {                                    \
             case AM_ZP:                                                  \
                 address = EA_ZP(chip, instruction);                      \
                 break;                                                   \
@@ -293,7 +293,7 @@
 #define OP_ASL(chip, instruction)                                  \
     do {                                                           \
         uint16_t address;                                          \
-        switch ((instruction).mode) {                              \
+        switch ((instruction)->mode) {                              \
             case AM_ACC:                                           \
                 ASL_ACC(chip);                                     \
                 break;                                             \
@@ -347,7 +347,7 @@
 #define OP_LSR(chip, instruction)                                  \
     do {                                                           \
         uint16_t address;                                          \
-        switch ((instruction).mode) {                              \
+        switch ((instruction)->mode) {                              \
             case AM_ACC:                                           \
                 LSR_ACC(chip);                                     \
                 break;                                             \
@@ -401,7 +401,7 @@
 #define OP_ROL(chip, instruction)                                  \
     do {                                                           \
         uint16_t address;                                          \
-        switch ((instruction).mode) {                              \
+        switch ((instruction)->mode) {                              \
             case AM_ACC:                                           \
                 ROL_ACC(chip);                                     \
                 break;                                             \
@@ -457,7 +457,7 @@
 #define OP_ROR(chip, instruction)                                  \
     do {                                                           \
         uint16_t address;                                          \
-        switch ((instruction).mode) {                              \
+        switch ((instruction)->mode) {                              \
             case AM_ACC:                                           \
                 ROR_ACC(chip);                                     \
                 break;                                             \
@@ -493,7 +493,7 @@
 
 #define OP_AND(chip, instruction)                                                          \
     do {                                                                                   \
-        switch ((instruction).mode) {                                                      \
+        switch ((instruction)->mode) {                                                      \
             case AM_IMM: AND_VALUE(chip, VALUE_IMM(instruction)); break;                   \
             case AM_ZP: AND_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ZP_X: AND_VALUE(chip, (chip)->memory[EA_ZP_X(chip, instruction)]); break; \
@@ -512,7 +512,7 @@
 
 #define OP_EOR(chip, instruction)                                                          \
     do {                                                                                   \
-        switch ((instruction).mode) {                                                      \
+        switch ((instruction)->mode) {                                                      \
             case AM_IMM: EOR_VALUE(chip, VALUE_IMM(instruction)); break;                   \
             case AM_ZP: EOR_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ZP_X: EOR_VALUE(chip, (chip)->memory[EA_ZP_X(chip, instruction)]); break; \
@@ -539,7 +539,7 @@
 
 #define OP_BIT(chip, instruction)                                                           \
     do {                                                                                    \
-        switch ((instruction).mode) {                                                       \
+        switch ((instruction)->mode) {                                                       \
             case AM_ZP: BIT_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break;  \
             case AM_ABS: BIT_VALUE(chip, (chip)->memory[EA_ABS(chip, instruction)]); break; \
             default: REPORT_INSTRUCTION_DOES_NOT_EXIST(chip); exit(0);                      \
@@ -552,7 +552,7 @@
 
 #define OP_ORA(chip, instruction)                                                          \
     do {                                                                                   \
-        switch ((instruction).mode) {                                                      \
+        switch ((instruction)->mode) {                                                      \
             case AM_IMM: ORA_VALUE(chip, VALUE_IMM(instruction)); break;                   \
             case AM_ZP: ORA_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ZP_X: ORA_VALUE(chip, (chip)->memory[EA_ZP_X(chip, instruction)]); break; \
@@ -596,7 +596,7 @@
 
 #define OP_ADC(chip, instruction) \
     do { \
-        switch ((instruction).mode) { \
+        switch ((instruction)->mode) { \
             case AM_IMM: ADC_VALUE(chip, VALUE_IMM(instruction)); break; \
             case AM_ZP: ADC_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ZP_X: ADC_VALUE(chip, (chip)->memory[EA_ZP_X(chip, instruction)]); break; \
@@ -629,7 +629,7 @@
 
 #define OP_SBC(chip, instruction) \
     do { \
-        switch ((instruction).mode) { \
+        switch ((instruction)->mode) { \
             case AM_IMM: SBC_VALUE(chip, VALUE_IMM(instruction)); break; \
             case AM_ZP: SBC_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ZP_X: SBC_VALUE(chip, (chip)->memory[EA_ZP_X(chip, instruction)]); break; \
@@ -648,7 +648,7 @@
 
 #define OP_CMP(chip, instruction) \
     do { \
-        switch ((instruction).mode) { \
+        switch ((instruction)->mode) { \
             case AM_IMM: CMP_VALUE(chip, VALUE_IMM(instruction)); break; \
             case AM_ZP: CMP_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ZP_X: CMP_VALUE(chip, (chip)->memory[EA_ZP_X(chip, instruction)]); break; \
@@ -667,7 +667,7 @@
 
 #define OP_CPX(chip, instruction) \
     do { \
-        switch ((instruction).mode) { \
+        switch ((instruction)->mode) { \
             case AM_IMM: CPX_VALUE(chip, VALUE_IMM(instruction)); break; \
             case AM_ZP: CPX_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ABS: CPX_VALUE(chip, (chip)->memory[EA_ABS(chip, instruction)]); break; \
@@ -681,7 +681,7 @@
 
 #define OP_CPY(chip, instruction) \
     do { \
-        switch ((instruction).mode) { \
+        switch ((instruction)->mode) { \
             case AM_IMM: CPY_VALUE(chip, VALUE_IMM(instruction)); break; \
             case AM_ZP: CPY_VALUE(chip, (chip)->memory[EA_ZP(chip, instruction)]); break; \
             case AM_ABS: CPY_VALUE(chip, (chip)->memory[EA_ABS(chip, instruction)]); break; \
@@ -696,7 +696,7 @@
 #define OP_DEC(chip, instruction)                                  \
     do {                                                           \
         uint16_t address;                                          \
-        switch ((instruction).mode) {                              \
+        switch ((instruction)->mode) {                              \
             case AM_ZP: address = EA_ZP(chip, instruction); break; \
             case AM_ZP_X: address = EA_ZP_X(chip, instruction); break; \
             case AM_ABS: address = EA_ABS(chip, instruction); break; \
@@ -720,7 +720,7 @@
 #define OP_INC(chip, instruction)                                  \
     do {                                                           \
         uint16_t address;                                          \
-        switch ((instruction).mode) {                              \
+        switch ((instruction)->mode) {                              \
             case AM_ZP: address = EA_ZP(chip, instruction); break; \
             case AM_ZP_X: address = EA_ZP_X(chip, instruction); break; \
             case AM_ABS: address = EA_ABS(chip, instruction); break; \
@@ -739,30 +739,30 @@
     do { (chip)->index_y_register++; SET_ZERO_AND_NEGATIVE_FLAGS(chip, (chip)->index_y_register); ENGINE_NEXT(chip, instruction); } while (0)
 
 #define OP_BCC(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if (!((chip)->status_register & 0x1)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if (!((chip)->status_register & 0x1)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BCS(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if ((chip)->status_register & 0x1) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if ((chip)->status_register & 0x1) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BEQ(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if ((chip)->status_register & 0x2) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if ((chip)->status_register & 0x2) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BMI(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if ((chip)->status_register & 0x80) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if ((chip)->status_register & 0x80) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BNE(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if (!((chip)->status_register & 0x2)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if (!((chip)->status_register & 0x2)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BPL(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if (!((chip)->status_register & 0x80)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if (!((chip)->status_register & 0x80)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BVC(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if (!((chip)->status_register & 0x40)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if (!((chip)->status_register & 0x40)) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 #define OP_BVS(chip, instruction) \
-    do { int8_t offset = (int8_t)(instruction).operand; if ((chip)->status_register & 0x40) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
+    do { int8_t offset = (int8_t)(instruction)->operand; if ((chip)->status_register & 0x40) (chip)->program_counter += offset; ENGINE_NEXT(chip, instruction); } while (0)
 
 #define OP_JUMP(chip, instruction)                                                            \
     do {                                                                                      \
         uint16_t pc_before = (chip)->program_counter;                                         \
         uint16_t address;                                                                     \
-        switch ((instruction).mode) {                                                         \
+        switch ((instruction)->mode) {                                                         \
             case AM_ABS:                                                                      \
                 address = EA_ABS(chip, instruction);                                          \
-                if (address == pc_before) exit(0);                                            \
+                if (address == pc_before) goto EXECUTION_COMPLETE;                            \
                 break;                                                                        \
             case AM_IND: {                                                                    \
                 uint16_t pointer = EA_ABS(chip, instruction);                                 \
@@ -779,7 +779,7 @@
 #define OP_JSR(chip, instruction)                                                             \
     do {                                                                                      \
         uint16_t jump_address = EA_ABS(chip, instruction);                                    \
-        uint16_t return_address = (chip)->program_counter + (instruction).spc_byte_offset - 1; \
+        uint16_t return_address = (chip)->program_counter + (instruction)->spc_byte_offset - 1; \
         PUSH_TO_STACK(chip, return_address >> 8);                                             \
         PUSH_TO_STACK(chip, return_address & 0xFF);                                           \
         ENGINE_JUMP(chip, instruction, jump_address);                                         \
@@ -812,7 +812,7 @@
 
 #define OP_BRK(chip, instruction)                                                             \
     do {                                                                                      \
-        uint16_t return_address = (chip)->program_counter + (instruction).spc_byte_offset + 1; \
+        uint16_t return_address = (chip)->program_counter + (instruction)->spc_byte_offset + 1; \
         PUSH_TO_STACK(chip, return_address >> 8);                                             \
         PUSH_TO_STACK(chip, return_address & 0xFF);                                           \
         PUSH_TO_STACK(chip, (chip)->status_register | 0x30);                                  \
@@ -1031,6 +1031,8 @@
 \
 /* break and no operation */ \
 [0x00] = { &&OP_BRK, AM_IMP }, \
-[0xEA] = { &&OP_NOP, AM_IMP }
+[0xEA] = { &&OP_NOP, AM_IMP }, \
+\
+[0xFF] = { &&DISPATCHER }
 
 #endif

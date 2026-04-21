@@ -5,6 +5,7 @@
 
 #include "emulator.h"
 #include "mos6502/cpu.h"
+#include "mos6502/trace.h"
 
 typedef struct {
     const char *program_path;
@@ -139,7 +140,6 @@ static int initialize_emulator(emulator_t *emulator, const emulation_mode_t mode
         case EMULATION_MODE_BLOCK: {
             emulator->emulation_mode = EMULATION_MODE_BLOCK;
             emulator->engine.block.arena_head = 0;
-            emulator->engine.block.program_counter = 0;
             emulator->engine.block.cache_length = 0;
             memset(emulator->engine.block.directory.instruction_owner, UINT16_MAX, sizeof(emulator->engine.block.directory.instruction_owner));
             memset(emulator->engine.block.directory.spc_to_tpc, UINT16_MAX, sizeof(emulator->engine.block.directory.spc_to_tpc));
@@ -180,6 +180,9 @@ int run(int argc, char **argv) {
     if (resolve_emulation_mode(&config, &mode) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
+
+    const char *trace_env = getenv("EMULATION_TRACE");
+    mos6502_trace_enabled = (trace_env != NULL && trace_env[0] != '\0' && trace_env[0] != '0');
 
     if (initialize_emulator(&emulator, mode) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
